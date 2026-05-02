@@ -111,7 +111,7 @@ Pedido com controlo de voz:
   "speech_engine": "xtts",
   "language": "pt",
   "speaker_name": "Ana Florence",
-  "music_gain_db": -9,
+  "music_gain_db": -3,
   "speech_gain_db": 4
 }
 ```
@@ -129,8 +129,21 @@ Pedido recomendado para voz clara local com Piper:
   "piper_length_scale": 1.0,
   "piper_noise_scale": 0.667,
   "piper_noise_w_scale": 0.8,
-  "music_gain_db": -12,
-  "speech_gain_db": 6
+  "music_gain_db": -4,
+  "speech_gain_db": 4
+}
+```
+
+Pedido com delivery ritmico mais limpo usando Bark:
+
+```json
+{
+  "music_prompt": "warm boom bap beat with soft keys",
+  "lyrics": "Entramos na batida\nfalamos por cima do groove\ncom mais clareza",
+  "speech_engine": "bark",
+  "vocal_style": "chant",
+  "music_gain_db": -3,
+  "speech_gain_db": 3
 }
 ```
 
@@ -213,6 +226,12 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 - fallback util quando `XTTS` nao estiver disponivel
 - nao tem o mesmo controlo nem a mesma naturalidade em portugues
 - pode ser pedido com `"speech_engine": "bark"`
+- modos de lyrics disponiveis: `"speech"` e `"chant"`
+- `"speech"` e o modo mais estavel
+- `"chant"` tenta um delivery ritmico mais fluido mantendo inteligibilidade
+- para melhor qualidade no modo `chant`, escrevam a letra em linhas curtas
+- se nao for indicado `speaker_name`, o backend usa um preset `v2` por defeito conforme o idioma
+- para canto verdadeiro, o ideal e trocar para um modelo especifico de singing voice
 
 ## Notas de implementacao
 

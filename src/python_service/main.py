@@ -31,9 +31,14 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 MUSIC_MODEL_NAME = "facebook/musicgen-small"
 BARK_MODEL_NAME = "suno/bark-small"
 MAX_NEW_TOKENS = 256
-DEFAULT_MUSIC_GAIN_DB = -9.0
+DEFAULT_MUSIC_GAIN_DB = -3.0
 DEFAULT_SPEECH_GAIN_DB = 4.0
 DEFAULT_LANGUAGE = "pt-PT"
+DEFAULT_VOCAL_STYLE = "speech"
+DEFAULT_BARK_VOICE_PRESETS = {
+    "pt": "v2/pt_speaker_3",
+    "en": "v2/en_speaker_6",
+}
 DEFAULT_PIPER_VOICE = "pt_PT-tug\u00E3o-medium"
 PIPER_VOICE_ALIASES = {
     "pt_PT-tugao-medium": DEFAULT_PIPER_VOICE,
@@ -74,6 +79,11 @@ class GenerateRequest(BaseModel):
 class GenerateSpeechMixRequest(BaseModel):
     music_prompt: str = Field(..., min_length=1, description="Prompt for MusicGen")
     lyrics: str = Field(..., min_length=1, description="Text to synthesize over the music")
+    vocal_style: str = Field(
+        default=DEFAULT_VOCAL_STYLE,
+        pattern="^(speech|chant)$",
+        description="Voice delivery style: speech or chant.",
+    )
     speech_engine: str = Field(
         default="piper",
         pattern="^(xtts|bark|piper)$",
@@ -292,6 +302,14 @@ def resolve_piper_voice(language: str, requested_voice: str | None) -> str:
     )
 
 
+def resolve_bark_voice_preset(language: str, requested_speaker: str | None) -> str | None:
+    if requested_speaker and requested_speaker.strip():
+        return requested_speaker.strip()
+
+    language_code = resolve_xtts_language(language)
+    return DEFAULT_BARK_VOICE_PRESETS.get(language_code)
+
+
 def build_piper_voice_urls(voice_code: str) -> tuple[str, str]:
     voice_match = PIPER_VOICE_PATTERN.match(voice_code)
     if not voice_match:
@@ -448,6 +466,20 @@ def resolve_speaker_file(path_value: str | None) -> Path | None:
     return file_path
 
 
+def prepare_bark_text(text: str, vocal_style: str) -> str:
+    cleaned_lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
+    cleaned_lines = [line for line in cleaned_lines if line]
+
+    if not cleaned_lines:
+        fallback_text = re.sub(r"\s+", " ", text).strip()
+        return fallback_text
+
+    if vocal_style == "speech":
+        return " ".join(cleaned_lines)
+
+    return "\n".join(cleaned_lines)
+
+
 def resolve_xtts_speaker(model_instance, requested_speaker: str | None) -> str | None:
     raw_speakers = getattr(model_instance, "speakers", None) or []
 
@@ -521,16 +553,20 @@ def generate_xtts_file(
 
 def generate_bark_file(
     text: str,
+    language: str,
     file_path: Path,
     speaker_name: str | None,
+    vocal_style: str,
 ) -> dict[str, str | None]:
     load_bark_model()
 
     processor_kwargs = {}
-    if speaker_name:
-        processor_kwargs["voice_preset"] = speaker_name
+    resolved_speaker_name = resolve_bark_voice_preset(language, speaker_name)
+    if resolved_speaker_name:
+        processor_kwargs["voice_preset"] = resolved_speaker_name
 
-    inputs = bark_processor(text, **processor_kwargs)
+    prepared_text = prepare_bark_text(text, vocal_style)
+    inputs = bark_processor(prepared_text, **processor_kwargs)
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
     with torch.no_grad():
@@ -542,7 +578,7 @@ def generate_bark_file(
 
     return {
         "speech_engine": "bark",
-        "speaker_name": speaker_name,
+        "speaker_name": resolved_speaker_name,
         "speaker_wav_path": None,
     }
 
@@ -580,6 +616,7 @@ def generate_piper_file(
 
 def generate_speech_file(
     text: str,
+    vocal_style: str,
     language: str,
     speech_engine: str,
     file_path: Path,
@@ -591,6 +628,12 @@ def generate_speech_file(
     piper_noise_scale: float,
     piper_noise_w_scale: float,
 ) -> dict[str, str | None]:
+    if vocal_style == "chant" and speech_engine != "bark":
+        raise ValueError(
+            "vocal_style='chant' is currently only supported with speech_engine='bark'. "
+            "Use Bark for lyric-style delivery, or keep vocal_style='speech' with Piper/XTTS."
+        )
+
     if speech_engine == "piper":
         return generate_piper_file(
             text=text,
@@ -603,7 +646,13 @@ def generate_speech_file(
         )
 
     if speech_engine == "bark":
-        return generate_bark_file(text=text, file_path=file_path, speaker_name=speaker_name)
+        return generate_bark_file(
+            text=text,
+            language=language,
+            file_path=file_path,
+            speaker_name=speaker_name,
+            vocal_style=vocal_style,
+        )
 
     return generate_xtts_file(
         text=text,
@@ -630,6 +679,7 @@ def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]
         generate_music_file(music_prompt, music_file_path)
         speech_metadata = generate_speech_file(
             text=lyrics,
+            vocal_style=data.vocal_style,
             language=data.language,
             speech_engine=data.speech_engine,
             file_path=speech_file_path,
