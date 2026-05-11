@@ -1,121 +1,197 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import heroImg from './assets/hero.png'
 import './App.css'
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const MIN_DURATION = 4
+const MAX_DURATION = 20
+const DURATION_STEP = 2
+
+const visualizerBars = [
+  48, 88, 126, 72, 150, 104, 56, 132, 92, 164, 70, 116, 154, 82, 46, 122, 96, 142, 66, 110, 158, 76,
+]
+
+function normalizeApiUrl(baseUrl, path) {
+  return `${baseUrl.replace(/\/$/, '')}${path}`
+}
+
+function clampDuration(value) {
+  return Math.min(MAX_DURATION, Math.max(MIN_DURATION, value))
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [prompt, setPrompt] = useState('')
+  const [duration, setDuration] = useState(8)
+  const [audioUrl, setAudioUrl] = useState('')
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+  const [lastPrompt, setLastPrompt] = useState('')
+
+  const cleanPrompt = prompt.trim()
+
+  async function handleSubmit(event) {
+    event.preventDefault()
+
+    if (!cleanPrompt) {
+      setError('Escreve uma prompt antes de gerar.')
+      return
+    }
+
+    setStatus('loading')
+    setError('')
+    setAudioUrl('')
+    setLastPrompt(cleanPrompt)
+
+    try {
+      const response = await fetch(normalizeApiUrl(API_BASE_URL, '/generate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: cleanPrompt,
+          duration_seconds: duration,
+        }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Nao foi possivel gerar o audio.')
+      }
+
+      const generatedUrl =
+        data.audio_url || data.audioUrl || (data.file ? normalizeApiUrl(API_BASE_URL, `/audio/${data.file}`) : '')
+
+      if (!generatedUrl) {
+        throw new Error('A API nao devolveu o endereco do audio.')
+      }
+
+      setAudioUrl(generatedUrl)
+      setStatus('success')
+    } catch (requestError) {
+      setStatus('error')
+      setError(requestError.message)
+    }
+  }
+
+  function decreaseDuration() {
+    setDuration((currentDuration) => clampDuration(currentDuration - DURATION_STEP))
+  }
+
+  function increaseDuration() {
+    setDuration((currentDuration) => clampDuration(currentDuration + DURATION_STEP))
+  }
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
+    <main className="app-shell">
+      <section className="workspace" aria-labelledby="page-title">
+        <div className="composer">
+          <header className="composer-header">
+            <p className="eyebrow">MusicGen Studio</p>
+            <h1 id="page-title">Gerador de musica com IA</h1>
+          </header>
+
+          <form className="composer-form" onSubmit={handleSubmit}>
+            <label className="field">
+              <span>Prompt</span>
+              <textarea
+                value={prompt}
+                onChange={(event) => {
+                  setPrompt(event.target.value)
+                  setError('')
+                }}
+                rows="7"
+                placeholder="Ex.: funk pesado com baixo forte e bateria rapida"
+              />
+            </label>
+
+            <section className="duration-control" aria-labelledby="duration-title">
+              <div>
+                <p className="control-label" id="duration-title">
+                  Duracao
+                </p>
+                <p className="duration-value">{duration}s</p>
+              </div>
+
+              <div className="duration-row">
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={decreaseDuration}
+                  disabled={duration <= MIN_DURATION}
+                  aria-label="Diminuir duracao"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  min={MIN_DURATION}
+                  max={MAX_DURATION}
+                  step={DURATION_STEP}
+                  value={duration}
+                  onChange={(event) => setDuration(Number(event.target.value))}
+                  aria-label="Duracao em segundos"
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={increaseDuration}
+                  disabled={duration >= MAX_DURATION}
+                  aria-label="Aumentar duracao"
+                >
+                  +
+                </button>
+              </div>
+            </section>
+
+            <div className="actions">
+              <button className="primary-action" type="submit" disabled={status === 'loading'}>
+                <span aria-hidden="true">{status === 'loading' ? '...' : '>'}</span>
+                {status === 'loading' ? 'A gerar audio' : 'Gerar musica'}
+              </button>
+            </div>
+          </form>
         </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
+
+        <aside className="player-panel" aria-label="Resultado">
+          <div className="visualizer" aria-hidden="true">
+            {visualizerBars.map((height, index) => (
+              <span key={`${height}-${index}`} style={{ '--bar-index': index, '--bar-height': `${height}px` }} />
+            ))}
+          </div>
+
+          <div className="status-area">
+            <p className="status-label">
+              {status === 'loading'
+                ? 'A gerar'
+                : status === 'success'
+                  ? 'Audio pronto'
+                  : status === 'error'
+                    ? 'Erro'
+                    : 'Pronto'}
+            </p>
+            <h2>{status === 'success' ? 'Resultado gerado' : 'Nova composicao'}</h2>
+            <p className="status-copy">
+              {status === 'loading'
+                ? `A criar cerca de ${duration} segundos de audio.`
+                : status === 'success'
+                  ? `${lastPrompt} - ${duration}s`
+                  : status === 'error'
+                    ? error
+                    : 'Escreve uma prompt, escolhe a duracao e gera o audio.'}
+            </p>
+          </div>
+
+          {audioUrl ? (
+            <audio className="audio-player" controls src={audioUrl}>
+              O teu browser nao suporta reproducao de audio.
+            </audio>
+          ) : (
+            <div className="empty-player" aria-hidden="true">
+              WAV
+            </div>
+          )}
+        </aside>
       </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    </main>
   )
 }
 

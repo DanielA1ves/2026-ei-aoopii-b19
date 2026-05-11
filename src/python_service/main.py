@@ -69,6 +69,12 @@ generation_lock = Lock()
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Music prompt")
+    duration_seconds: int = Field(
+        8,
+        ge=MIN_DURATION_SECONDS,
+        le=MAX_DURATION_SECONDS,
+        description="Approximate audio duration in seconds",
+    )
 
 
 class GenerateSpeechMixRequest(BaseModel):
