@@ -14,7 +14,9 @@ OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MODEL_NAME = "facebook/musicgen-small"
-MAX_NEW_TOKENS = 256
+MIN_DURATION_SECONDS = 4
+MAX_DURATION_SECONDS = 20
+TOKENS_PER_SECOND = 100
 
 app = FastAPI(title="MusicGen Service")
 processor = None
@@ -24,6 +26,12 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Music prompt")
+    duration_seconds: int = Field(
+        8,
+        ge=MIN_DURATION_SECONDS,
+        le=MAX_DURATION_SECONDS,
+        description="Approximate audio duration in seconds",
+    )
 
 
 @app.on_event("startup")
@@ -56,7 +64,10 @@ async def generate_music(data: GenerateRequest, request: Request) -> dict[str, s
         inputs = processor(text=[prompt], padding=True, return_tensors="pt").to(device)
 
         with torch.no_grad():
-            audio_values = model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
+            audio_values = model.generate(
+                **inputs,
+                max_new_tokens=data.duration_seconds * TOKENS_PER_SECOND,
+            )
 
         audio = audio_values[0, 0].cpu().numpy()
         sampling_rate = model.config.audio_encoder.sampling_rate
