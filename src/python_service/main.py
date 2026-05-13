@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from math import gcd
 from pathlib import Path
 from threading import Lock
 import re
@@ -12,16 +11,20 @@ from urllib.request import urlopen
 from uuid import uuid4
 import wave
 
-import numpy as np
 import torch
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
-from scipy.io.wavfile import read as read_wav
-from scipy.io.wavfile import write as write_wav
-from scipy.signal import resample_poly
 from starlette.concurrency import run_in_threadpool
-from transformers import AutoProcessor, MusicgenForConditionalGeneration
+
+from audio_merge import export_mp3, mix_audio_files, save_wav
+from musicgen_service import (
+    DEFAULT_DURATION_SECONDS,
+    MAX_DURATION_SECONDS,
+    MIN_DURATION_SECONDS,
+    generate_music_file as generate_musicgen_file,
+    load_music_model,
+)
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -34,6 +37,11 @@ MAX_NEW_TOKENS = 1026
 DEFAULT_MUSIC_GAIN_DB = -9.0
 DEFAULT_SPEECH_GAIN_DB = 4.0
 DEFAULT_LANGUAGE = "pt-PT"
+DEFAULT_VOCAL_STYLE = "speech"
+DEFAULT_BARK_VOICE_PRESETS = {
+    "pt": "v2/pt_speaker_3",
+    "en": "v2/en_speaker_6",
+}
 DEFAULT_PIPER_VOICE = "pt_PT-tug\u00E3o-medium"
 PIPER_VOICE_ALIASES = {
     "pt_PT-tugao-medium": DEFAULT_PIPER_VOICE,
@@ -56,12 +64,10 @@ PIPER_VOICES_DIR = PIPER_BASE_DIR / "piper_voices"
 PIPER_ESPEAK_DIR = PIPER_BASE_DIR / "piper_espeak_data"
 
 app = FastAPI(title="Music and Speech Service")
-music_processor = None
-music_model = None
-bark_processor = None
-bark_model = None
 xtts_model = None
 xtts_speakers = None
+bark_processor = None
+bark_model = None
 piper_voices = {}
 device = "cuda" if torch.cuda.is_available() else "cpu"
 generation_lock = Lock()
@@ -80,10 +86,26 @@ class GenerateRequest(BaseModel):
 class GenerateSpeechMixRequest(BaseModel):
     music_prompt: str = Field(..., min_length=1, description="Prompt for MusicGen")
     lyrics: str = Field(..., min_length=1, description="Text to synthesize over the music")
+    vocal_style: str = Field(
+        default=DEFAULT_VOCAL_STYLE,
+        pattern="^(speech|chant)$",
+        description="Voice delivery style: speech or chant.",
+    )
+    duration_seconds: int = Field(
+        DEFAULT_DURATION_SECONDS,
+        ge=MIN_DURATION_SECONDS,
+        le=MAX_DURATION_SECONDS,
+        description="Approximate instrumental duration in seconds",
+    )
     speech_engine: str = Field(
         default="piper",
         pattern="^(xtts|bark|piper)$",
         description="Speech engine to use: xtts, bark or piper",
+    )
+    vocal_delivery: str = Field(
+        default="rhythmic",
+        pattern="^(spoken|rhythmic|singing)$",
+        description="Vocal delivery style. Bark handles rhythmic/singing better than Piper.",
     )
     language: str = Field(
         default=DEFAULT_LANGUAGE,
@@ -204,33 +226,6 @@ def load_xtts_speakers() -> list[str]:
     return xtts_speakers
 
 
-def load_music_model() -> None:
-    global music_processor, music_model
-
-    if music_model is None:
-        music_processor = AutoProcessor.from_pretrained(MUSIC_MODEL_NAME)
-        music_model = MusicgenForConditionalGeneration.from_pretrained(MUSIC_MODEL_NAME)
-        music_model.to(device)
-        music_model.eval()
-
-
-def load_bark_model() -> None:
-    global bark_processor, bark_model
-
-    if bark_model is None:
-        try:
-            from transformers import BarkModel
-        except ImportError as exc:
-            raise DependencyUnavailableError(
-                "Bark is not available in the installed transformers version."
-            ) from exc
-
-        bark_processor = AutoProcessor.from_pretrained(BARK_MODEL_NAME)
-        bark_model = BarkModel.from_pretrained(BARK_MODEL_NAME)
-        bark_model.to(device)
-        bark_model.eval()
-
-
 def load_xtts_model():
     global xtts_model
 
@@ -258,6 +253,23 @@ def load_xtts_model():
             )
 
     return xtts_model
+
+
+def load_bark_model() -> None:
+    global bark_processor, bark_model
+
+    if bark_model is None:
+        try:
+            from transformers import AutoProcessor, BarkModel
+        except ImportError as exc:
+            raise DependencyUnavailableError(
+                "Bark is not available in the installed transformers version."
+            ) from exc
+
+        bark_processor = AutoProcessor.from_pretrained(BARK_MODEL_NAME)
+        bark_model = BarkModel.from_pretrained(BARK_MODEL_NAME)
+        bark_model.to(device)
+        bark_model.eval()
 
 
 def ensure_piper_espeak_dir(package_espeak_dir: Path) -> Path:
@@ -296,6 +308,14 @@ def resolve_piper_voice(language: str, requested_voice: str | None) -> str:
         language_code,
         PIPER_LANGUAGE_DEFAULTS.get(language_code.split("-", maxsplit=1)[0], DEFAULT_PIPER_VOICE),
     )
+
+
+def resolve_bark_voice_preset(language: str, requested_speaker: str | None) -> str | None:
+    if requested_speaker and requested_speaker.strip():
+        return requested_speaker.strip()
+
+    language_code = resolve_xtts_language(language)
+    return DEFAULT_BARK_VOICE_PRESETS.get(language_code)
 
 
 def build_piper_voice_urls(voice_code: str) -> tuple[str, str]:
@@ -371,71 +391,6 @@ def load_piper_voice(voice_code: str):
     return piper_voices[voice_key]
 
 
-def normalize_audio(audio: np.ndarray) -> np.ndarray:
-    array = np.asarray(audio)
-
-    if array.ndim > 1:
-        array = array.mean(axis=-1)
-
-    if np.issubdtype(array.dtype, np.integer):
-        info = np.iinfo(array.dtype)
-        scale = max(abs(info.min), info.max)
-        return (array.astype(np.float32) / float(scale)).astype(np.float32)
-
-    return array.astype(np.float32)
-
-
-def apply_gain(audio: np.ndarray, gain_db: float) -> np.ndarray:
-    return audio * np.float32(10 ** (gain_db / 20.0))
-
-
-def save_audio(file_path: Path, sampling_rate: int, audio: np.ndarray) -> None:
-    clipped = np.clip(audio, -1.0, 1.0)
-    pcm16 = np.int16(clipped * 32767)
-    write_wav(str(file_path), rate=sampling_rate, data=pcm16)
-
-
-def resample_audio(audio: np.ndarray, original_rate: int, target_rate: int) -> np.ndarray:
-    if original_rate == target_rate:
-        return audio
-
-    rate_gcd = gcd(original_rate, target_rate)
-    up = target_rate // rate_gcd
-    down = original_rate // rate_gcd
-    return resample_poly(audio, up=up, down=down).astype(np.float32)
-
-
-def mix_audio_tracks(
-    music_audio: np.ndarray,
-    music_rate: int,
-    speech_audio: np.ndarray,
-    speech_rate: int,
-    music_gain_db: float,
-    speech_gain_db: float,
-) -> tuple[np.ndarray, int]:
-    music = normalize_audio(music_audio)
-    speech = normalize_audio(speech_audio)
-    speech = resample_audio(speech, speech_rate, music_rate)
-
-    music = apply_gain(music, music_gain_db)
-    speech = apply_gain(speech, speech_gain_db)
-
-    output_length = max(len(music), len(speech))
-    if len(music) and len(music) < output_length:
-        repeat_count = int(np.ceil(output_length / len(music)))
-        music = np.tile(music, repeat_count)[:output_length]
-
-    mixed = np.zeros(output_length, dtype=np.float32)
-    mixed[: len(music)] += music
-    mixed[: len(speech)] += speech
-
-    peak = np.max(np.abs(mixed)) if mixed.size else 0.0
-    if peak > 0.99:
-        mixed = mixed / peak
-
-    return mixed.astype(np.float32), music_rate
-
-
 def build_audio_url(request: Request, file_name: str) -> str:
     return str(request.base_url).rstrip("/") + f"/audio/{file_name}"
 
@@ -452,6 +407,20 @@ def resolve_speaker_file(path_value: str | None) -> Path | None:
         raise FileNotFoundError(f"Speaker reference file was not found: {file_path}")
 
     return file_path
+
+
+def prepare_bark_text(text: str, vocal_style: str) -> str:
+    cleaned_lines = [re.sub(r"\s+", " ", line).strip() for line in text.splitlines()]
+    cleaned_lines = [line for line in cleaned_lines if line]
+
+    if not cleaned_lines:
+        fallback_text = re.sub(r"\s+", " ", text).strip()
+        return fallback_text
+
+    if vocal_style == "speech":
+        return " ".join(cleaned_lines)
+
+    return "\n".join(cleaned_lines)
 
 
 def resolve_xtts_speaker(model_instance, requested_speaker: str | None) -> str | None:
@@ -472,20 +441,6 @@ def resolve_xtts_speaker(model_instance, requested_speaker: str | None) -> str |
             )
         return requested_speaker
     return None
-
-
-def generate_music_file(prompt: str, file_path: Path) -> int:
-    load_music_model()
-
-    inputs = music_processor(text=[prompt], padding=True, return_tensors="pt").to(device)
-
-    with torch.no_grad():
-        audio_values = music_model.generate(**inputs, max_new_tokens=MAX_NEW_TOKENS)
-
-    audio = audio_values[0, 0].cpu().numpy()
-    sampling_rate = music_model.config.audio_encoder.sampling_rate
-    save_audio(file_path, sampling_rate, audio)
-    return sampling_rate
 
 
 def generate_xtts_file(
@@ -525,18 +480,57 @@ def generate_xtts_file(
     }
 
 
+def split_lyrics_into_bars(text: str, max_words_per_bar: int = 5) -> list[str]:
+    normalized_text = re.sub(r"\s+", " ", text).strip()
+    if not normalized_text:
+        return []
+
+    phrases = [
+        phrase.strip()
+        for phrase in re.split(r"[,;:.!?/|]+", normalized_text)
+        if phrase.strip()
+    ]
+
+    bars = []
+    for phrase in phrases:
+        words = phrase.split()
+        for index in range(0, len(words), max_words_per_bar):
+            bar = " ".join(words[index : index + max_words_per_bar]).strip()
+            if bar:
+                bars.append(bar)
+
+    return bars or [normalized_text]
+
+
+def prepare_vocal_text(text: str, speech_engine: str, vocal_delivery: str) -> str:
+    clean_text = " ".join(text.split())
+    if vocal_delivery == "spoken":
+        return clean_text
+
+    bars = split_lyrics_into_bars(clean_text)
+    if speech_engine == "bark":
+        style_prompt = "[singing]" if vocal_delivery == "singing" else "[rhythmic rap vocals]"
+        return f"{style_prompt}\n" + "\n".join(bars)
+
+    return ". ".join(bars) + "."
+
+
 def generate_bark_file(
     text: str,
+    language: str,
     file_path: Path,
     speaker_name: str | None,
+    vocal_style: str,
 ) -> dict[str, str | None]:
     load_bark_model()
 
     processor_kwargs = {}
-    if speaker_name:
-        processor_kwargs["voice_preset"] = speaker_name
+    resolved_speaker_name = resolve_bark_voice_preset(language, speaker_name)
+    if resolved_speaker_name:
+        processor_kwargs["voice_preset"] = resolved_speaker_name
 
-    inputs = bark_processor(text, **processor_kwargs)
+    prepared_text = prepare_bark_text(text, vocal_style)
+    inputs = bark_processor(prepared_text, **processor_kwargs)
     inputs = {key: value.to(device) for key, value in inputs.items()}
 
     with torch.no_grad():
@@ -544,11 +538,11 @@ def generate_bark_file(
 
     audio = audio_values.cpu().numpy().squeeze()
     sampling_rate = bark_model.generation_config.sample_rate
-    save_audio(file_path, sampling_rate, audio)
+    save_wav(file_path, sampling_rate, audio)
 
     return {
         "speech_engine": "bark",
-        "speaker_name": speaker_name,
+        "speaker_name": resolved_speaker_name,
         "speaker_wav_path": None,
     }
 
@@ -586,8 +580,10 @@ def generate_piper_file(
 
 def generate_speech_file(
     text: str,
+    vocal_style: str,
     language: str,
     speech_engine: str,
+    vocal_delivery: str,
     file_path: Path,
     speaker_name: str | None,
     speaker_wav_path: str | None,
@@ -597,9 +593,17 @@ def generate_speech_file(
     piper_noise_scale: float,
     piper_noise_w_scale: float,
 ) -> dict[str, str | None]:
+    if vocal_style == "chant" and speech_engine != "bark":
+        raise ValueError(
+            "vocal_style='chant' is currently only supported with speech_engine='bark'. "
+            "Use Bark for lyric-style delivery, or keep vocal_style='speech' with Piper/XTTS."
+        )
+
+    prepared_text = prepare_vocal_text(text, speech_engine, vocal_delivery)
+
     if speech_engine == "piper":
         return generate_piper_file(
-            text=text,
+            text=prepared_text,
             file_path=file_path,
             piper_voice_code=resolve_piper_voice(language, piper_voice),
             piper_speaker_id=piper_speaker_id,
@@ -609,10 +613,16 @@ def generate_speech_file(
         )
 
     if speech_engine == "bark":
-        return generate_bark_file(text=text, file_path=file_path, speaker_name=speaker_name)
+        return generate_bark_file(
+            text=prepared_text,
+            language=language,
+            file_path=file_path,
+            speaker_name=speaker_name,
+            vocal_style=vocal_style,
+        )
 
     return generate_xtts_file(
-        text=text,
+        text=prepared_text,
         language=language,
         file_path=file_path,
         speaker_name=speaker_name,
@@ -625,20 +635,29 @@ def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]
     lyrics = data.lyrics.strip()
     bundle_id = uuid4().hex
     music_file_name = f"{bundle_id}-music.wav"
-    speech_file_name = f"{bundle_id}-speech.wav"
-    mixed_file_name = f"{bundle_id}-mix.wav"
+    vocal_file_name = f"{bundle_id}-vocal.wav"
+    mixed_wav_file_name = f"{bundle_id}-mix.wav"
+    final_file_name = f"{bundle_id}.mp3"
 
     music_file_path = OUTPUT_DIR / music_file_name
-    speech_file_path = OUTPUT_DIR / speech_file_name
-    mixed_file_path = OUTPUT_DIR / mixed_file_name
+    vocal_file_path = OUTPUT_DIR / vocal_file_name
+    mixed_wav_file_path = OUTPUT_DIR / mixed_wav_file_name
+    final_file_path = OUTPUT_DIR / final_file_name
 
     with generation_lock:
-        generate_music_file(music_prompt, music_file_path)
+        generate_musicgen_file(
+            music_prompt,
+            data.duration_seconds,
+            music_file_path,
+            vocals=True,
+        )
         speech_metadata = generate_speech_file(
             text=lyrics,
+            vocal_style=data.vocal_style,
             language=data.language,
             speech_engine=data.speech_engine,
-            file_path=speech_file_path,
+            vocal_delivery=data.vocal_delivery,
+            file_path=vocal_file_path,
             speaker_name=data.speaker_name,
             speaker_wav_path=data.speaker_wav_path,
             piper_voice=data.piper_voice,
@@ -648,34 +667,32 @@ def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]
             piper_noise_w_scale=data.piper_noise_w_scale,
         )
 
-    music_rate, music_audio = read_wav(str(music_file_path))
-    speech_rate, speech_audio = read_wav(str(speech_file_path))
-    mixed_audio, mixed_rate = mix_audio_tracks(
-        music_audio=music_audio,
-        music_rate=music_rate,
-        speech_audio=speech_audio,
-        speech_rate=speech_rate,
+    mix_audio_files(
+        music_file_path=music_file_path,
+        vocal_file_path=vocal_file_path,
+        output_wav_path=mixed_wav_file_path,
         music_gain_db=data.music_gain_db,
-        speech_gain_db=data.speech_gain_db,
+        vocal_gain_db=data.speech_gain_db,
     )
-    save_audio(mixed_file_path, mixed_rate, mixed_audio)
+    export_mp3(mixed_wav_file_path, final_file_path)
 
     return {
-        "file": mixed_file_name,
+        "file": final_file_name,
         "music_file": music_file_name,
-        "speech_file": speech_file_name,
+        "speech_file": vocal_file_name,
+        "mixed_wav_file": mixed_wav_file_name,
         "speech_engine": speech_metadata["speech_engine"],
         "speaker_name": speech_metadata["speaker_name"],
         "speaker_wav_path": speech_metadata["speaker_wav_path"],
     }
 
 
-def generate_music_bundle(prompt: str) -> str:
+def generate_music_bundle(prompt: str, duration_seconds: int) -> str:
     file_name = f"{uuid4().hex}.wav"
     file_path = OUTPUT_DIR / file_name
 
     with generation_lock:
-        generate_music_file(prompt, file_path)
+        generate_musicgen_file(prompt, duration_seconds, file_path)
 
     return file_name
 
@@ -698,7 +715,11 @@ async def generate_music(data: GenerateRequest, request: Request) -> dict[str, s
         raise HTTPException(status_code=400, detail="Prompt is required")
 
     try:
-        file_name = await run_in_threadpool(generate_music_bundle, prompt)
+        file_name = await run_in_threadpool(
+            generate_music_bundle,
+            prompt,
+            data.duration_seconds,
+        )
         return {
             "file": file_name,
             "audio_url": build_audio_url(request, file_name),
@@ -731,6 +752,8 @@ async def generate_with_speech(
             "music_url": build_audio_url(request, result["music_file"]),
             "speech_file": result["speech_file"],
             "speech_url": build_audio_url(request, result["speech_file"]),
+            "mixed_wav_file": result["mixed_wav_file"],
+            "mixed_wav_url": build_audio_url(request, result["mixed_wav_file"]),
             "speech_engine": result["speech_engine"],
             "speaker_name": result["speaker_name"],
             "speaker_wav_path": result["speaker_wav_path"],
@@ -754,4 +777,9 @@ async def get_audio(file_name: str) -> FileResponse:
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(file_path, media_type="audio/wav", filename=file_name)
+    media_types = {
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+    }
+    media_type = media_types.get(file_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(file_path, media_type=media_type, filename=file_name)
