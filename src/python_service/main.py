@@ -31,7 +31,6 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "outputs"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-<<<<<<< Updated upstream
 MUSIC_MODEL_NAME = "facebook/musicgen-small"
 BARK_MODEL_NAME = "suno/bark-small"
 MAX_NEW_TOKENS = 256
@@ -43,12 +42,6 @@ DEFAULT_BARK_VOICE_PRESETS = {
     "pt": "v2/pt_speaker_3",
     "en": "v2/en_speaker_6",
 }
-=======
-DEFAULT_MUSIC_GAIN_DB = -9.0
-DEFAULT_SPEECH_GAIN_DB = 4.0
-DEFAULT_LANGUAGE = "pt-PT"
-BARK_MODEL_NAME = "suno/bark-small"
->>>>>>> Stashed changes
 DEFAULT_PIPER_VOICE = "pt_PT-tug\u00E3o-medium"
 PIPER_VOICE_ALIASES = {
     "pt_PT-tugao-medium": DEFAULT_PIPER_VOICE,
@@ -82,32 +75,27 @@ generation_lock = Lock()
 
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Music prompt")
-<<<<<<< Updated upstream
-=======
     duration_seconds: int = Field(
         DEFAULT_DURATION_SECONDS,
         ge=MIN_DURATION_SECONDS,
         le=MAX_DURATION_SECONDS,
         description="Approximate audio duration in seconds",
     )
->>>>>>> Stashed changes
 
 
 class GenerateSpeechMixRequest(BaseModel):
     music_prompt: str = Field(..., min_length=1, description="Prompt for MusicGen")
     lyrics: str = Field(..., min_length=1, description="Text to synthesize over the music")
-<<<<<<< Updated upstream
     vocal_style: str = Field(
         default=DEFAULT_VOCAL_STYLE,
         pattern="^(speech|chant)$",
         description="Voice delivery style: speech or chant.",
-=======
+    )
     duration_seconds: int = Field(
         DEFAULT_DURATION_SECONDS,
         ge=MIN_DURATION_SECONDS,
         le=MAX_DURATION_SECONDS,
         description="Approximate instrumental duration in seconds",
->>>>>>> Stashed changes
     )
     speech_engine: str = Field(
         default="piper",
@@ -605,15 +593,13 @@ def generate_speech_file(
     piper_noise_scale: float,
     piper_noise_w_scale: float,
 ) -> dict[str, str | None]:
-<<<<<<< Updated upstream
     if vocal_style == "chant" and speech_engine != "bark":
         raise ValueError(
             "vocal_style='chant' is currently only supported with speech_engine='bark'. "
             "Use Bark for lyric-style delivery, or keep vocal_style='speech' with Piper/XTTS."
         )
-=======
+
     prepared_text = prepare_vocal_text(text, speech_engine, vocal_delivery)
->>>>>>> Stashed changes
 
     if speech_engine == "piper":
         return generate_piper_file(
@@ -628,17 +614,11 @@ def generate_speech_file(
 
     if speech_engine == "bark":
         return generate_bark_file(
-<<<<<<< Updated upstream
-            text=text,
+            text=prepared_text,
             language=language,
             file_path=file_path,
             speaker_name=speaker_name,
             vocal_style=vocal_style,
-=======
-            text=prepared_text,
-            file_path=file_path,
-            speaker_name=speaker_name,
->>>>>>> Stashed changes
         )
 
     return generate_xtts_file(

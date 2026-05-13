@@ -238,17 +238,14 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 
 - opcao experimental para vocals mais expressivos
 - pode ser pedido com `"speech_engine": "bark"`
-<<<<<<< Updated upstream
 - modos de lyrics disponiveis: `"speech"` e `"chant"`
 - `"speech"` e o modo mais estavel
 - `"chant"` tenta um delivery ritmico mais fluido mantendo inteligibilidade
 - para melhor qualidade no modo `chant`, escrevam a letra em linhas curtas
 - se nao for indicado `speaker_name`, o backend usa um preset `v2` por defeito conforme o idioma
 - para canto verdadeiro, o ideal e trocar para um modelo especifico de singing voice
-=======
 - pode usar `"vocal_delivery": "rhythmic"` ou `"singing"`
 - nao garante canto afinado nem sincronizado, mas tende a soar menos lido do que `Piper`
->>>>>>> Stashed changes
 
 ## Notas de implementacao
 
