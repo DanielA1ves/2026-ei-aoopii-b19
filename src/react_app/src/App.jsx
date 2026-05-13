@@ -19,30 +19,20 @@ function clampDuration(value) {
 }
 
 function App() {
-  const [view, setView] = useState('home')
   const [prompt, setPrompt] = useState('')
-  const [lyrics, setLyrics] = useState('')
   const [duration, setDuration] = useState(8)
   const [audioUrl, setAudioUrl] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [lastPrompt, setLastPrompt] = useState('')
-  const [lastMode, setLastMode] = useState('')
 
   const cleanPrompt = prompt.trim()
-  const cleanLyrics = lyrics.trim()
-  const isVocalView = view === 'vocals'
 
-  async function generateAudio(mode) {
-    const isVocalMode = mode === 'vocals'
+  async function handleSubmit(event) {
+    event.preventDefault()
 
     if (!cleanPrompt) {
       setError('Escreve uma prompt antes de gerar.')
-      return
-    }
-
-    if (isVocalMode && !cleanLyrics) {
-      setError('Escreve uma letra antes de gerar com vocals.')
       return
     }
 
@@ -50,30 +40,15 @@ function App() {
     setError('')
     setAudioUrl('')
     setLastPrompt(cleanPrompt)
-    setLastMode(isVocalMode ? 'com vocals' : 'sem vocals')
 
     try {
-      const endpoint = isVocalMode ? '/generate-with-speech' : '/generate'
-      const body = isVocalMode
-        ? {
-            music_prompt: cleanPrompt,
-            lyrics: cleanLyrics,
-            duration_seconds: duration,
-            speech_engine: 'bark',
-            vocal_delivery: 'singing',
-            language: 'pt-PT',
-            music_gain_db: -12,
-            speech_gain_db: 7,
-          }
-        : {
-            prompt: cleanPrompt,
-            duration_seconds: duration,
-          }
-
-      const response = await fetch(normalizeApiUrl(API_BASE_URL, endpoint), {
+      const response = await fetch(normalizeApiUrl(API_BASE_URL, '/generate'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          prompt: cleanPrompt,
+          duration_seconds: duration,
+        }),
       })
 
       const data = await response.json().catch(() => ({}))
@@ -97,26 +72,6 @@ function App() {
     }
   }
 
-  function handleSubmit(event) {
-    event.preventDefault()
-    generateAudio(isVocalView ? 'vocals' : 'instrumental')
-  }
-
-  function openGenerator(nextView) {
-    setView(nextView)
-    setStatus('idle')
-    setError('')
-    setAudioUrl('')
-    setLastMode('')
-  }
-
-  function goHome() {
-    setView('home')
-    setStatus('idle')
-    setError('')
-    setAudioUrl('')
-  }
-
   function decreaseDuration() {
     setDuration((currentDuration) => clampDuration(currentDuration - DURATION_STEP))
   }
@@ -127,33 +82,11 @@ function App() {
 
   return (
     <main className="app-shell">
-      {view === 'home' ? (
-        <section className="home-screen" aria-labelledby="home-title">
-          <div className="home-content">
-            <p className="eyebrow">MusicGen Studio</p>
-            <h1 id="home-title">Mc Mozart</h1>
-            <p className="home-copy">Escolhe como queres criar a tua proxima composicao.</p>
-            <div className="home-actions">
-              <button className="home-action primary-action" type="button" onClick={() => openGenerator('instrumental')}>
-                <span aria-hidden="true">♪</span>
-                Gerar apenas musica
-              </button>
-              <button className="home-action secondary-action" type="button" onClick={() => openGenerator('vocals')}>
-                <span aria-hidden="true">+</span>
-                Gerar musica com letra
-              </button>
-            </div>
-          </div>
-        </section>
-      ) : (
       <section className="workspace" aria-labelledby="page-title">
         <div className="composer">
           <header className="composer-header">
-            <button className="back-button" type="button" onClick={goHome}>
-              Voltar
-            </button>
-            <p className="eyebrow">Mc Mozart</p>
-            <h1 id="page-title">{isVocalView ? 'Musica com letra' : 'Apenas musica'}</h1>
+            <p className="eyebrow">MusicGen Studio</p>
+            <h1 id="page-title">Gerador de musica com IA</h1>
           </header>
 
           <form className="composer-form" onSubmit={handleSubmit}>
@@ -169,21 +102,6 @@ function App() {
                 placeholder="Ex.: funk pesado com baixo forte e bateria rapida"
               />
             </label>
-
-            {isVocalView ? (
-              <label className="field">
-                <span>Letra</span>
-                <textarea
-                  value={lyrics}
-                  onChange={(event) => {
-                    setLyrics(event.target.value)
-                    setError('')
-                  }}
-                  rows="5"
-                  placeholder="Ex.: Hoje eu quero cantar, sentir o samba no ar"
-                />
-              </label>
-            ) : null}
 
             <section className="duration-control" aria-labelledby="duration-title">
               <div>
@@ -227,7 +145,7 @@ function App() {
             <div className="actions">
               <button className="primary-action" type="submit" disabled={status === 'loading'}>
                 <span aria-hidden="true">{status === 'loading' ? '...' : '>'}</span>
-                {status === 'loading' ? 'A gerar audio' : isVocalView ? 'Gerar com letra' : 'Gerar musica'}
+                {status === 'loading' ? 'A gerar audio' : 'Gerar musica'}
               </button>
             </div>
           </form>
@@ -253,12 +171,12 @@ function App() {
             <h2>{status === 'success' ? 'Resultado gerado' : 'Nova composicao'}</h2>
             <p className="status-copy">
               {status === 'loading'
-                ? `A criar cerca de ${duration} segundos de audio ${lastMode || ''}.`
+                ? `A criar cerca de ${duration} segundos de audio.`
                 : status === 'success'
-                  ? `${lastPrompt} - ${duration}s - ${lastMode}`
+                  ? `${lastPrompt} - ${duration}s`
                   : status === 'error'
                     ? error
-                    : 'Escreve uma prompt, opcionalmente adiciona letra, e escolhe uma das opcoes de geracao.'}
+                    : 'Escreve uma prompt, escolhe a duracao e gera o audio.'}
             </p>
           </div>
 
@@ -273,7 +191,6 @@ function App() {
           )}
         </aside>
       </section>
-      )}
     </main>
   )
 }

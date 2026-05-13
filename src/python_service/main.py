@@ -33,8 +33,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MUSIC_MODEL_NAME = "facebook/musicgen-small"
 BARK_MODEL_NAME = "suno/bark-small"
-MAX_NEW_TOKENS = 256
-DEFAULT_MUSIC_GAIN_DB = -3.0
+MAX_NEW_TOKENS = 1026
+DEFAULT_MUSIC_GAIN_DB = -9.0
 DEFAULT_SPEECH_GAIN_DB = 4.0
 DEFAULT_LANGUAGE = "pt-PT"
 DEFAULT_VOCAL_STYLE = "speech"
@@ -76,7 +76,7 @@ generation_lock = Lock()
 class GenerateRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Music prompt")
     duration_seconds: int = Field(
-        DEFAULT_DURATION_SECONDS,
+        8,
         ge=MIN_DURATION_SECONDS,
         le=MAX_DURATION_SECONDS,
         description="Approximate audio duration in seconds",
