@@ -5,6 +5,7 @@ Servico local em FastAPI para:
 - gerar instrumental com `facebook/musicgen-small`
 - gerar voz com `Piper`, `XTTS v2` ou `Bark`
 - misturar voz e musica no backend
+- exportar a musica final em MP3
 
 O endpoint antigo de musica continua disponivel e foi adicionado um endpoint novo para `music + speech`.
 
@@ -26,6 +27,7 @@ As vozes `Piper` nao precisam de existir dentro do repositorio. O backend descar
 - Python 3.13 continua a servir para `MusicGen` e `Bark`, mas `XTTS` nao instala nesse ambiente
 - ligacao a internet na primeira execucao para descarregar os modelos
 - GPU NVIDIA com CUDA e opcional, mas ajuda bastante
+- FFmpeg instalado e disponivel no PATH para exportar MP3 com `pydub`
 - No Windows, o `XTTS` pode precisar de `Microsoft Visual C++ Build Tools` para compilar a dependencia `TTS`
 - `Piper` funciona localmente e e a opcao recomendada para speech claro sem clonagem de voz
 
@@ -83,9 +85,12 @@ Pedido:
 
 ```json
 {
-  "prompt": "sad jazz for 3am"
+  "prompt": "sad jazz for 3am",
+  "duration_seconds": 8
 }
 ```
+
+`duration_seconds` e opcional e aceita valores entre 4 e 20 segundos.
 
 ### `POST /generate-with-speech`
 
@@ -97,10 +102,14 @@ Pedido minimo:
 {
   "music_prompt": "old school hip hop beat with warm bass and soft piano",
   "lyrics": "Este projeto junta musica e voz geradas localmente.",
+  "duration_seconds": 8,
   "speech_engine": "piper",
+  "vocal_delivery": "rhythmic",
   "language": "pt-PT"
 }
 ```
+
+Para tentar vocals mais ritmados ou cantados, usem `speech_engine: "bark"` com `vocal_delivery: "rhythmic"` ou `"singing"`. A qualidade pode variar bastante.
 
 Pedido com controlo de voz:
 
@@ -125,6 +134,7 @@ Pedido recomendado para voz clara local com Piper:
   "music_prompt": "old school hip hop beat with warm bass and soft piano",
   "lyrics": "Este projeto junta musica e voz geradas localmente.",
   "speech_engine": "piper",
+  "vocal_delivery": "rhythmic",
   "language": "pt-PT",
   "piper_length_scale": 1.0,
   "piper_noise_scale": 0.667,
@@ -176,6 +186,7 @@ Pedido com clonagem de voz local:
   "music_prompt": "relaxed lo fi beat",
   "lyrics": "Esta voz foi sintetizada a partir de uma referencia.",
   "speech_engine": "xtts",
+  "vocal_delivery": "rhythmic",
   "language": "pt",
   "speaker_wav_path": "samples/minha_voz.wav"
 }
@@ -185,12 +196,14 @@ Resposta:
 
 ```json
 {
-  "file": "abc123-mix.wav",
-  "audio_url": "http://localhost:8000/audio/abc123-mix.wav",
+  "file": "abc123.mp3",
+  "audio_url": "http://localhost:8000/audio/abc123.mp3",
   "music_file": "abc123-music.wav",
   "music_url": "http://localhost:8000/audio/abc123-music.wav",
-  "speech_file": "abc123-speech.wav",
-  "speech_url": "http://localhost:8000/audio/abc123-speech.wav",
+  "speech_file": "abc123-vocal.wav",
+  "speech_url": "http://localhost:8000/audio/abc123-vocal.wav",
+  "mixed_wav_file": "abc123-mix.wav",
+  "mixed_wav_url": "http://localhost:8000/audio/abc123-mix.wav",
   "speech_engine": "xtts",
   "speaker_name": "Ana Florence",
   "speaker_wav_path": null
@@ -223,15 +236,19 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 
 ### `bark`
 
-- fallback util quando `XTTS` nao estiver disponivel
-- nao tem o mesmo controlo nem a mesma naturalidade em portugues
+- opcao experimental para vocals mais expressivos
 - pode ser pedido com `"speech_engine": "bark"`
+<<<<<<< Updated upstream
 - modos de lyrics disponiveis: `"speech"` e `"chant"`
 - `"speech"` e o modo mais estavel
 - `"chant"` tenta um delivery ritmico mais fluido mantendo inteligibilidade
 - para melhor qualidade no modo `chant`, escrevam a letra em linhas curtas
 - se nao for indicado `speaker_name`, o backend usa um preset `v2` por defeito conforme o idioma
 - para canto verdadeiro, o ideal e trocar para um modelo especifico de singing voice
+=======
+- pode usar `"vocal_delivery": "rhythmic"` ou `"singing"`
+- nao garante canto afinado nem sincronizado, mas tende a soar menos lido do que `Piper`
+>>>>>>> Stashed changes
 
 ## Notas de implementacao
 
@@ -239,7 +256,7 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 - `XTTS` e `Bark` sao carregados apenas quando usados.
 - `Piper` descarrega a voz na primeira utilizacao e depois fica em cache local.
 - A geracao e feita de forma sequencial para evitar conflitos de GPU e picos de memoria.
-- A mistura final e feita em Python com reamostragem e controlo de ganho.
+- A mistura final e feita em `audio_merge.py` com reamostragem, controlo de ganho e exportacao MP3 via `pydub`/FFmpeg.
 - Se a voz for maior do que a musica, o instrumental e repetido para evitar silencio no fim.
 
 ## Testes rapidos no PowerShell
@@ -249,7 +266,7 @@ Gerar apenas musica:
 ```powershell
 Invoke-RestMethod -Method POST http://localhost:8000/generate `
   -ContentType "application/json" `
-  -Body '{"prompt":"sad jazz for 3am"}'
+  -Body '{"prompt":"sad jazz for 3am","duration_seconds":8}'
 ```
 
 Gerar musica com voz:
@@ -257,7 +274,7 @@ Gerar musica com voz:
 ```powershell
 Invoke-RestMethod -Method POST http://localhost:8000/generate-with-speech `
   -ContentType "application/json" `
-  -Body '{"music_prompt":"old school hip hop beat","lyrics":"Esta e uma demo com voz por cima da batida.","speech_engine":"piper","language":"pt-PT"}'
+  -Body '{"music_prompt":"old school hip hop beat","lyrics":"Esta e uma demo com voz por cima da batida.","duration_seconds":8,"speech_engine":"piper","language":"pt-PT"}'
 ```
 
 Gerar musica com voz em ingles dos Estados Unidos:
@@ -266,6 +283,14 @@ Gerar musica com voz em ingles dos Estados Unidos:
 Invoke-RestMethod -Method POST http://localhost:8000/generate-with-speech `
   -ContentType "application/json" `
   -Body '{"music_prompt":"uplifting pop beat","lyrics":"This is a demo with a U.S. English voice.","speech_engine":"piper","language":"en-US"}'
+```
+
+Tentar vocals cantados com Bark:
+
+```powershell
+Invoke-RestMethod -Method POST http://localhost:8000/generate-with-speech `
+  -ContentType "application/json" `
+  -Body '{"music_prompt":"Brazilian pagode instrumental backing track with cavaquinho, pandeiro and tantan, space for singing vocals","lyrics":"Hoje eu quero cantar, sentir o samba no ar, deixar o coracao falar, e a alegria chegar","duration_seconds":12,"speech_engine":"bark","vocal_delivery":"singing","language":"pt-PT","music_gain_db":-12,"speech_gain_db":7}'
 ```
 
 Usar XTTS com referencia de voz:

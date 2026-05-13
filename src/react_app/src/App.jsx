@@ -1,0 +1,281 @@
+import { useState } from 'react'
+import './App.css'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const MIN_DURATION = 4
+const MAX_DURATION = 20
+const DURATION_STEP = 2
+
+const visualizerBars = [
+  48, 88, 126, 72, 150, 104, 56, 132, 92, 164, 70, 116, 154, 82, 46, 122, 96, 142, 66, 110, 158, 76,
+]
+
+function normalizeApiUrl(baseUrl, path) {
+  return `${baseUrl.replace(/\/$/, '')}${path}`
+}
+
+function clampDuration(value) {
+  return Math.min(MAX_DURATION, Math.max(MIN_DURATION, value))
+}
+
+function App() {
+  const [view, setView] = useState('home')
+  const [prompt, setPrompt] = useState('')
+  const [lyrics, setLyrics] = useState('')
+  const [duration, setDuration] = useState(8)
+  const [audioUrl, setAudioUrl] = useState('')
+  const [status, setStatus] = useState('idle')
+  const [error, setError] = useState('')
+  const [lastPrompt, setLastPrompt] = useState('')
+  const [lastMode, setLastMode] = useState('')
+
+  const cleanPrompt = prompt.trim()
+  const cleanLyrics = lyrics.trim()
+  const isVocalView = view === 'vocals'
+
+  async function generateAudio(mode) {
+    const isVocalMode = mode === 'vocals'
+
+    if (!cleanPrompt) {
+      setError('Escreve uma prompt antes de gerar.')
+      return
+    }
+
+    if (isVocalMode && !cleanLyrics) {
+      setError('Escreve uma letra antes de gerar com vocals.')
+      return
+    }
+
+    setStatus('loading')
+    setError('')
+    setAudioUrl('')
+    setLastPrompt(cleanPrompt)
+    setLastMode(isVocalMode ? 'com vocals' : 'sem vocals')
+
+    try {
+      const endpoint = isVocalMode ? '/generate-with-speech' : '/generate'
+      const body = isVocalMode
+        ? {
+            music_prompt: cleanPrompt,
+            lyrics: cleanLyrics,
+            duration_seconds: duration,
+            speech_engine: 'bark',
+            vocal_delivery: 'singing',
+            language: 'pt-PT',
+            music_gain_db: -12,
+            speech_gain_db: 7,
+          }
+        : {
+            prompt: cleanPrompt,
+            duration_seconds: duration,
+          }
+
+      const response = await fetch(normalizeApiUrl(API_BASE_URL, endpoint), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.detail || 'Nao foi possivel gerar o audio.')
+      }
+
+      const generatedUrl =
+        data.audio_url || data.audioUrl || (data.file ? normalizeApiUrl(API_BASE_URL, `/audio/${data.file}`) : '')
+
+      if (!generatedUrl) {
+        throw new Error('A API nao devolveu o endereco do audio.')
+      }
+
+      setAudioUrl(generatedUrl)
+      setStatus('success')
+    } catch (requestError) {
+      setStatus('error')
+      setError(requestError.message)
+    }
+  }
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    generateAudio(isVocalView ? 'vocals' : 'instrumental')
+  }
+
+  function openGenerator(nextView) {
+    setView(nextView)
+    setStatus('idle')
+    setError('')
+    setAudioUrl('')
+    setLastMode('')
+  }
+
+  function goHome() {
+    setView('home')
+    setStatus('idle')
+    setError('')
+    setAudioUrl('')
+  }
+
+  function decreaseDuration() {
+    setDuration((currentDuration) => clampDuration(currentDuration - DURATION_STEP))
+  }
+
+  function increaseDuration() {
+    setDuration((currentDuration) => clampDuration(currentDuration + DURATION_STEP))
+  }
+
+  return (
+    <main className="app-shell">
+      {view === 'home' ? (
+        <section className="home-screen" aria-labelledby="home-title">
+          <div className="home-content">
+            <p className="eyebrow">MusicGen Studio</p>
+            <h1 id="home-title">Mc Mozart</h1>
+            <p className="home-copy">Escolhe como queres criar a tua proxima composicao.</p>
+            <div className="home-actions">
+              <button className="home-action primary-action" type="button" onClick={() => openGenerator('instrumental')}>
+                <span aria-hidden="true">♪</span>
+                Gerar apenas musica
+              </button>
+              <button className="home-action secondary-action" type="button" onClick={() => openGenerator('vocals')}>
+                <span aria-hidden="true">+</span>
+                Gerar musica com letra
+              </button>
+            </div>
+          </div>
+        </section>
+      ) : (
+      <section className="workspace" aria-labelledby="page-title">
+        <div className="composer">
+          <header className="composer-header">
+            <button className="back-button" type="button" onClick={goHome}>
+              Voltar
+            </button>
+            <p className="eyebrow">Mc Mozart</p>
+            <h1 id="page-title">{isVocalView ? 'Musica com letra' : 'Apenas musica'}</h1>
+          </header>
+
+          <form className="composer-form" onSubmit={handleSubmit}>
+            <label className="field">
+              <span>Prompt</span>
+              <textarea
+                value={prompt}
+                onChange={(event) => {
+                  setPrompt(event.target.value)
+                  setError('')
+                }}
+                rows="7"
+                placeholder="Ex.: funk pesado com baixo forte e bateria rapida"
+              />
+            </label>
+
+            {isVocalView ? (
+              <label className="field">
+                <span>Letra</span>
+                <textarea
+                  value={lyrics}
+                  onChange={(event) => {
+                    setLyrics(event.target.value)
+                    setError('')
+                  }}
+                  rows="5"
+                  placeholder="Ex.: Hoje eu quero cantar, sentir o samba no ar"
+                />
+              </label>
+            ) : null}
+
+            <section className="duration-control" aria-labelledby="duration-title">
+              <div>
+                <p className="control-label" id="duration-title">
+                  Duracao
+                </p>
+                <p className="duration-value">{duration}s</p>
+              </div>
+
+              <div className="duration-row">
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={decreaseDuration}
+                  disabled={duration <= MIN_DURATION}
+                  aria-label="Diminuir duracao"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  min={MIN_DURATION}
+                  max={MAX_DURATION}
+                  step={DURATION_STEP}
+                  value={duration}
+                  onChange={(event) => setDuration(Number(event.target.value))}
+                  aria-label="Duracao em segundos"
+                />
+                <button
+                  type="button"
+                  className="icon-button"
+                  onClick={increaseDuration}
+                  disabled={duration >= MAX_DURATION}
+                  aria-label="Aumentar duracao"
+                >
+                  +
+                </button>
+              </div>
+            </section>
+
+            <div className="actions">
+              <button className="primary-action" type="submit" disabled={status === 'loading'}>
+                <span aria-hidden="true">{status === 'loading' ? '...' : '>'}</span>
+                {status === 'loading' ? 'A gerar audio' : isVocalView ? 'Gerar com letra' : 'Gerar musica'}
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <aside className="player-panel" aria-label="Resultado">
+          <div className="visualizer" aria-hidden="true">
+            {visualizerBars.map((height, index) => (
+              <span key={`${height}-${index}`} style={{ '--bar-index': index, '--bar-height': `${height}px` }} />
+            ))}
+          </div>
+
+          <div className="status-area">
+            <p className="status-label">
+              {status === 'loading'
+                ? 'A gerar'
+                : status === 'success'
+                  ? 'Audio pronto'
+                  : status === 'error'
+                    ? 'Erro'
+                    : 'Pronto'}
+            </p>
+            <h2>{status === 'success' ? 'Resultado gerado' : 'Nova composicao'}</h2>
+            <p className="status-copy">
+              {status === 'loading'
+                ? `A criar cerca de ${duration} segundos de audio ${lastMode || ''}.`
+                : status === 'success'
+                  ? `${lastPrompt} - ${duration}s - ${lastMode}`
+                  : status === 'error'
+                    ? error
+                    : 'Escreve uma prompt, opcionalmente adiciona letra, e escolhe uma das opcoes de geracao.'}
+            </p>
+          </div>
+
+          {audioUrl ? (
+            <audio className="audio-player" controls src={audioUrl}>
+              O teu browser nao suporta reproducao de audio.
+            </audio>
+          ) : (
+            <div className="empty-player" aria-hidden="true">
+              WAV
+            </div>
+          )}
+        </aside>
+      </section>
+      )}
+    </main>
+  )
+}
+
+export default App

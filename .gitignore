@@ -1,6 +1,7 @@
 src/.env
 src/python_service/.venv/
 src/python_service/__pycache__/
-src/python_service/outputs/*.wav
+src/python_service/outputs/*
+!src/python_service/outputs/.gitkeep
 src/python_service/piper_voices/
 voices.txt
