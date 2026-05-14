@@ -1,0 +1,40 @@
+services:
+  api:
+    build:
+      context: ./src/python_service
+    ports:
+      - "8000:8000"
+    environment:
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - python_outputs:/app/outputs
+      - huggingface_cache:/root/.cache/huggingface
+      - piper_cache:/root/AppData/Local/music_speech_service
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  web:
+    build:
+      context: ./src/react_app
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_PROXY_TARGET: http://api:8000
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  python_outputs:
+  huggingface_cache:
+  piper_cache:

@@ -33,6 +33,8 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MUSIC_MODEL_NAME = "facebook/musicgen-small"
 BARK_MODEL_NAME = "suno/bark-small"
+MIN_DURATION_SECONDS = 1
+MAX_DURATION_SECONDS = 30
 MAX_NEW_TOKENS = 1026
 DEFAULT_MUSIC_GAIN_DB = -9.0
 DEFAULT_SPEECH_GAIN_DB = 4.0
