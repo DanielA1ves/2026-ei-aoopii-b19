@@ -3,11 +3,12 @@
 Servico local em FastAPI para:
 
 - gerar instrumental com `facebook/musicgen-small`
+- gerar musica com `deAPI.ai` atraves de uma chave de API
 - gerar voz com `Piper`, `XTTS v2` ou `Bark`
 - misturar voz e musica no backend
 - exportar a musica final em MP3
 
-O endpoint antigo de musica continua disponivel e foi adicionado um endpoint novo para `music + speech`.
+O endpoint antigo de musica continua disponivel, agora com escolha entre `music_provider: "local"` e `music_provider: "deapi"`.
 
 ## Estrutura
 
@@ -28,6 +29,7 @@ As vozes `Piper` nao precisam de existir dentro do repositorio. O backend descar
 - ligacao a internet na primeira execucao para descarregar os modelos
 - GPU NVIDIA com CUDA e opcional, mas ajuda bastante
 - FFmpeg instalado e disponivel no PATH para exportar MP3 com `pydub`
+- chave `DEAPI_API_KEY` se quiserem gerar musica via deAPI.ai
 - No Windows, o `XTTS` pode precisar de `Microsoft Visual C++ Build Tools` para compilar a dependencia `TTS`
 - `Piper` funciona localmente e e a opcao recomendada para speech claro sem clonagem de voz
 
@@ -40,6 +42,21 @@ python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
+```
+
+Para ativar a deAPI.ai:
+
+```powershell
+$env:DEAPI_API_KEY="a_tua_chave"
+```
+
+A chave pode ser criada em `https://app.deapi.ai/settings/api-keys`.
+
+Variaveis opcionais:
+
+```powershell
+$env:DEAPI_MUSIC_MODEL="ACE-Step-v1.5-turbo"
+$env:DEAPI_MUSIC_FORMAT="wav"
 ```
 
 Se quiserem a melhor qualidade para voz em portugues, usem mesmo um ambiente com Python `3.10` ou `3.11`.
@@ -86,11 +103,23 @@ Pedido:
 ```json
 {
   "prompt": "sad jazz for 3am",
-  "duration_seconds": 8
+  "duration_seconds": 8,
+  "music_provider": "local"
 }
 ```
 
-`duration_seconds` e opcional e aceita valores entre 4 e 20 segundos.
+`duration_seconds` e opcional. No modo local aceita ate 20 segundos. No modo `deapi` aceita duracoes maiores, dentro dos limites do modelo da deAPI.
+
+Pedido via deAPI:
+
+```json
+{
+  "prompt": "upbeat electronic dance music with energetic synths",
+  "duration_seconds": 30,
+  "music_provider": "deapi",
+  "deapi_lyrics": "[Instrumental]"
+}
+```
 
 ### `POST /generate-with-speech`
 
@@ -103,8 +132,22 @@ Pedido minimo:
   "music_prompt": "old school hip hop beat with warm bass and soft piano",
   "lyrics": "Este projeto junta musica e voz geradas localmente.",
   "duration_seconds": 8,
+  "music_provider": "local",
   "speech_engine": "piper",
   "vocal_delivery": "rhythmic",
+  "language": "pt-PT"
+}
+```
+
+Para usar a deAPI apenas como instrumental de fundo e manter a voz local:
+
+```json
+{
+  "music_prompt": "warm boom bap beat with soft keys",
+  "lyrics": "Entramos na batida com voz gerada localmente.",
+  "duration_seconds": 30,
+  "music_provider": "deapi",
+  "speech_engine": "piper",
   "language": "pt-PT"
 }
 ```
@@ -205,10 +248,20 @@ Resposta:
   "mixed_wav_file": "abc123-mix.wav",
   "mixed_wav_url": "http://localhost:8000/audio/abc123-mix.wav",
   "speech_engine": "xtts",
+  "music_provider": "local",
+  "deapi_request_id": null,
   "speaker_name": "Ana Florence",
   "speaker_wav_path": null
 }
 ```
+
+### `GET /deapi/models`
+
+Lista modelos de musica disponiveis na deAPI para escolher um `deapi_model`.
+
+### `GET /deapi/balance`
+
+Consulta o saldo da conta deAPI configurada em `DEAPI_API_KEY`.
 
 ### `GET /audio/{file_name}`
 
@@ -250,6 +303,7 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 ## Notas de implementacao
 
 - O `MusicGen` e carregado no arranque.
+- A deAPI e usada apenas quando o pedido tem `music_provider: "deapi"`.
 - `XTTS` e `Bark` sao carregados apenas quando usados.
 - `Piper` descarrega a voz na primeira utilizacao e depois fica em cache local.
 - A geracao e feita de forma sequencial para evitar conflitos de GPU e picos de memoria.

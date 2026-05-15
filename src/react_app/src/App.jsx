@@ -2,9 +2,12 @@ import { useState } from 'react'
 import './App.css'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
-const MIN_DURATION = 4
-const MAX_DURATION = 20
-const DURATION_STEP = 2
+const LOCAL_MIN_DURATION = 4
+const LOCAL_MAX_DURATION = 20
+const LOCAL_DURATION_STEP = 2
+const DEAPI_MIN_DURATION = 10
+const DEAPI_MAX_DURATION = 600
+const DEAPI_DURATION_STEP = 10
 
 const visualizerBars = [
   48, 88, 126, 72, 150, 104, 56, 132, 92, 164, 70, 116, 154, 82, 46, 122, 96, 142, 66, 110, 158, 76,
@@ -14,11 +17,55 @@ function normalizeApiUrl(baseUrl, path) {
   return `${baseUrl.replace(/\/$/, '')}${path}`
 }
 
-function clampDuration(value) {
-  return Math.min(MAX_DURATION, Math.max(MIN_DURATION, value))
+function clampDuration(value, minDuration, maxDuration) {
+  return Math.min(maxDuration, Math.max(minDuration, value))
 }
 
-function DurationControl({ duration, setDuration }) {
+function providerDurationLimits(provider) {
+  if (provider === 'deapi') {
+    return {
+      min: DEAPI_MIN_DURATION,
+      max: DEAPI_MAX_DURATION,
+      step: DEAPI_DURATION_STEP,
+    }
+  }
+
+  return {
+    min: LOCAL_MIN_DURATION,
+    max: LOCAL_MAX_DURATION,
+    step: LOCAL_DURATION_STEP,
+  }
+}
+
+function ProviderControl({ provider, setProvider }) {
+  return (
+    <section className="provider-control" aria-labelledby="provider-title">
+      <p className="control-label" id="provider-title">
+        Motor
+      </p>
+      <div className="provider-options">
+        <button
+          type="button"
+          className={provider === 'local' ? 'provider-option active' : 'provider-option'}
+          onClick={() => setProvider('local')}
+        >
+          Local
+        </button>
+        <button
+          type="button"
+          className={provider === 'deapi' ? 'provider-option active' : 'provider-option'}
+          onClick={() => setProvider('deapi')}
+        >
+          deAPI
+        </button>
+      </div>
+    </section>
+  )
+}
+
+function DurationControl({ duration, setDuration, provider }) {
+  const limits = providerDurationLimits(provider)
+
   return (
     <section className="duration-control" aria-labelledby="duration-title">
       <div>
@@ -32,17 +79,19 @@ function DurationControl({ duration, setDuration }) {
         <button
           type="button"
           className="icon-button"
-          onClick={() => setDuration((currentDuration) => clampDuration(currentDuration - DURATION_STEP))}
-          disabled={duration <= MIN_DURATION}
+          onClick={() =>
+            setDuration((currentDuration) => clampDuration(currentDuration - limits.step, limits.min, limits.max))
+          }
+          disabled={duration <= limits.min}
           aria-label="Diminuir duracao"
         >
           -
         </button>
         <input
           type="range"
-          min={MIN_DURATION}
-          max={MAX_DURATION}
-          step={DURATION_STEP}
+          min={limits.min}
+          max={limits.max}
+          step={limits.step}
           value={duration}
           onChange={(event) => setDuration(Number(event.target.value))}
           aria-label="Duracao em segundos"
@@ -50,8 +99,10 @@ function DurationControl({ duration, setDuration }) {
         <button
           type="button"
           className="icon-button"
-          onClick={() => setDuration((currentDuration) => clampDuration(currentDuration + DURATION_STEP))}
-          disabled={duration >= MAX_DURATION}
+          onClick={() =>
+            setDuration((currentDuration) => clampDuration(currentDuration + limits.step, limits.min, limits.max))
+          }
+          disabled={duration >= limits.max}
           aria-label="Aumentar duracao"
         >
           +
@@ -119,12 +170,19 @@ function HomePage({ onSelectMode }) {
 function MusicPage({ onBack }) {
   const [prompt, setPrompt] = useState('')
   const [duration, setDuration] = useState(8)
+  const [musicProvider, setMusicProvider] = useState('local')
   const [audioUrl, setAudioUrl] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [lastPrompt, setLastPrompt] = useState('')
 
   const cleanPrompt = prompt.trim()
+
+  function handleProviderChange(nextProvider) {
+    const limits = providerDurationLimits(nextProvider)
+    setMusicProvider(nextProvider)
+    setDuration((currentDuration) => clampDuration(currentDuration, limits.min, limits.max))
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -146,6 +204,7 @@ function MusicPage({ onBack }) {
         body: JSON.stringify({
           prompt: cleanPrompt,
           duration_seconds: duration,
+          music_provider: musicProvider,
         }),
       })
 
@@ -196,7 +255,9 @@ function MusicPage({ onBack }) {
               />
             </label>
 
-            <DurationControl duration={duration} setDuration={setDuration} />
+            <ProviderControl provider={musicProvider} setProvider={handleProviderChange} />
+
+            <DurationControl duration={duration} setDuration={setDuration} provider={musicProvider} />
 
             <div className="actions">
               <button className="primary-action" type="submit" disabled={status === 'loading'}>
@@ -213,12 +274,12 @@ function MusicPage({ onBack }) {
           title={status === 'success' ? 'Resultado gerado' : 'Nova composicao'}
           copy={
             status === 'loading'
-              ? `A criar cerca de ${duration} segundos de audio.`
+              ? `A criar cerca de ${duration} segundos de audio com ${musicProvider === 'deapi' ? 'deAPI' : 'MusicGen local'}.`
               : status === 'success'
-                ? `${lastPrompt} - ${duration}s`
+                ? `${lastPrompt} - ${duration}s - ${musicProvider === 'deapi' ? 'deAPI' : 'local'}`
                 : status === 'error'
                   ? error
-                  : 'Escreve uma prompt, escolhe a duracao e gera o audio.'
+                  : 'Escreve uma prompt, escolhe o motor e gera o audio.'
           }
         />
       </section>
@@ -230,6 +291,7 @@ function LyricsPage({ onBack }) {
   const [musicPrompt, setMusicPrompt] = useState('')
   const [lyrics, setLyrics] = useState('')
   const [duration, setDuration] = useState(8)
+  const [musicProvider, setMusicProvider] = useState('local')
   const [audioUrl, setAudioUrl] = useState('')
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
@@ -237,6 +299,12 @@ function LyricsPage({ onBack }) {
 
   const cleanMusicPrompt = musicPrompt.trim()
   const cleanLyrics = lyrics.trim()
+
+  function handleProviderChange(nextProvider) {
+    const limits = providerDurationLimits(nextProvider)
+    setMusicProvider(nextProvider)
+    setDuration((currentDuration) => clampDuration(currentDuration, limits.min, limits.max))
+  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -259,6 +327,7 @@ function LyricsPage({ onBack }) {
           music_prompt: cleanMusicPrompt,
           lyrics: cleanLyrics,
           duration_seconds: duration,
+          music_provider: musicProvider,
           speech_engine: 'piper',
           language: 'pt-PT',
         }),
@@ -324,7 +393,9 @@ function LyricsPage({ onBack }) {
               />
             </label>
 
-            <DurationControl duration={duration} setDuration={setDuration} />
+            <ProviderControl provider={musicProvider} setProvider={handleProviderChange} />
+
+            <DurationControl duration={duration} setDuration={setDuration} provider={musicProvider} />
 
             <div className="actions">
               <button className="primary-action" type="submit" disabled={status === 'loading'}>
@@ -341,12 +412,12 @@ function LyricsPage({ onBack }) {
           title={status === 'success' ? 'Resultado gerado' : 'Nova musica com letra'}
           copy={
             status === 'loading'
-              ? `A criar cerca de ${duration} segundos de audio.`
+              ? `A criar cerca de ${duration} segundos de audio com ${musicProvider === 'deapi' ? 'deAPI' : 'MusicGen local'}.`
               : status === 'success'
-                ? `${lastPrompt} - ${duration}s`
+                ? `${lastPrompt} - ${duration}s - ${musicProvider === 'deapi' ? 'deAPI' : 'local'}`
                 : status === 'error'
                   ? error
-                  : 'Escreve a prompt da musica, a letra e gera o audio.'
+                  : 'Escreve a prompt da musica, a letra, escolhe o motor e gera o audio.'
           }
           outputFormat="MP3"
         />
