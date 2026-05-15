@@ -5,6 +5,7 @@ torch
 transformers>=4.52.1,<4.56
 scipy
 pydub
+requests>=2.32
 sentencepiece
 piper-tts
 TTS; python_version < "3.12"

@@ -6,6 +6,9 @@ services:
       - "8000:8000"
     environment:
       HF_HOME: /root/.cache/huggingface
+      DEAPI_API_KEY: ${DEAPI_API_KEY:-}
+      DEAPI_MUSIC_MODEL: ${DEAPI_MUSIC_MODEL:-ACE-Step-v1.5-turbo}
+      DEAPI_MUSIC_FORMAT: ${DEAPI_MUSIC_FORMAT:-wav}
     volumes:
       - python_outputs:/app/outputs
       - huggingface_cache:/root/.cache/huggingface
