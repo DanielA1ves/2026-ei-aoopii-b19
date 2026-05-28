@@ -154,6 +154,42 @@ textarea:focus {
   background: #f8fafc;
 }
 
+.provider-control {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.provider-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.provider-option {
+  min-height: 44px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  color: var(--text-strong);
+  background: var(--surface);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+}
+
+.provider-option.active {
+  border-color: #111827;
+  color: #ffffff;
+  background: #111827;
+}
+
+.provider-option:not(.active):hover {
+  border-color: #111827;
+}
+
 .duration-control > div:first-child {
   display: flex;
   align-items: center;
@@ -222,7 +258,7 @@ input[type='range'] {
   cursor: pointer;
 }
 
-.primary-action span {
+.primary-action .action-icon {
   display: grid;
   width: 24px;
   height: 24px;
@@ -234,9 +270,34 @@ input[type='range'] {
   font-weight: 800;
 }
 
+.primary-action.is-loading .action-icon {
+  position: relative;
+  background: transparent;
+}
+
+.primary-action.is-loading .action-icon::before,
+.primary-action.is-loading .action-icon::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+}
+
+.primary-action.is-loading .action-icon::before {
+  inset: 0;
+  border: 3px solid rgba(34, 197, 94, 0.28);
+  border-top-color: var(--accent);
+  animation: spin 760ms linear infinite;
+}
+
+.primary-action.is-loading .action-icon::after {
+  inset: 8px;
+  background: var(--accent);
+  animation: loading-dot 760ms ease-in-out infinite alternate;
+}
+
 .primary-action:disabled {
   cursor: wait;
-  opacity: 0.74;
+  opacity: 0.86;
 }
 
 .primary-action:not(:disabled):hover {
@@ -283,6 +344,24 @@ input[type='range'] {
 
   to {
     transform: scaleY(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-dot {
+  from {
+    transform: scale(0.65);
+    opacity: 0.62;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 

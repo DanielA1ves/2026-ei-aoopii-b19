@@ -1,3 +1,4 @@
+/.env
 src/.env
 src/python_service/.venv/
 src/python_service/__pycache__/
