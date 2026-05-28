@@ -18,6 +18,17 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from audio_merge import export_mp3, mix_audio_files, save_wav
+from deapi_service import (
+    DEFAULT_DEAPI_GUIDANCE_SCALE,
+    DEFAULT_DEAPI_INFERENCE_STEPS,
+    DEFAULT_DEAPI_MUSIC_FORMAT,
+    DEFAULT_DEAPI_MUSIC_MODEL,
+    DEFAULT_DEAPI_SEED,
+    DeapiError,
+    generate_music_file as generate_deapi_music_file,
+    get_balance as get_deapi_balance,
+    get_music_models as get_deapi_music_models,
+)
 from musicgen_service import (
     DEFAULT_DURATION_SECONDS,
     MAX_DURATION_SECONDS,
@@ -33,11 +44,16 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 MUSIC_MODEL_NAME = "facebook/musicgen-small"
 BARK_MODEL_NAME = "suno/bark-small"
+MIN_DURATION_SECONDS = 4
+MAX_DURATION_SECONDS = 20
 MAX_NEW_TOKENS = 1026
 DEFAULT_MUSIC_GAIN_DB = -9.0
 DEFAULT_SPEECH_GAIN_DB = 4.0
 DEFAULT_LANGUAGE = "pt-PT"
 DEFAULT_VOCAL_STYLE = "speech"
+DEFAULT_MUSIC_PROVIDER = "local"
+DEAPI_MIN_DURATION_SECONDS = 10
+DEAPI_MAX_DURATION_SECONDS = 600
 DEFAULT_BARK_VOICE_PRESETS = {
     "pt": "v2/pt_speaker_3",
     "en": "v2/en_speaker_6",
@@ -78,8 +94,56 @@ class GenerateRequest(BaseModel):
     duration_seconds: int = Field(
         8,
         ge=MIN_DURATION_SECONDS,
-        le=MAX_DURATION_SECONDS,
+        le=DEAPI_MAX_DURATION_SECONDS,
         description="Approximate audio duration in seconds",
+    )
+    music_provider: str = Field(
+        default=DEFAULT_MUSIC_PROVIDER,
+        pattern="^(local|deapi)$",
+        description="Music generation provider: local MusicGen or deAPI.",
+    )
+    deapi_model: str | None = Field(
+        default=None,
+        description="Optional deAPI model slug. If omitted, DEAPI_MUSIC_MODEL is used.",
+    )
+    deapi_lyrics: str = Field(
+        default="[Instrumental]",
+        min_length=1,
+        description="Lyrics sent to deAPI. Use [Instrumental] for instrumental tracks.",
+    )
+    deapi_inference_steps: int = Field(
+        default=DEFAULT_DEAPI_INFERENCE_STEPS,
+        ge=1,
+        le=100,
+        description="deAPI music diffusion steps.",
+    )
+    deapi_guidance_scale: float = Field(
+        default=DEFAULT_DEAPI_GUIDANCE_SCALE,
+        ge=0,
+        le=20,
+        description="deAPI classifier-free guidance scale.",
+    )
+    deapi_seed: int = Field(default=DEFAULT_DEAPI_SEED, description="deAPI seed. Use -1 for random.")
+    deapi_format: str = Field(
+        default=DEFAULT_DEAPI_MUSIC_FORMAT,
+        min_length=2,
+        max_length=8,
+        description="deAPI output format, for example wav, flac or mp3.",
+    )
+    deapi_bpm: int | None = Field(default=None, ge=30, le=300, description="Optional deAPI BPM.")
+    deapi_keyscale: str | None = Field(
+        default=None,
+        description="Optional deAPI musical key, for example C major or F# minor.",
+    )
+    deapi_timesignature: int | None = Field(
+        default=None,
+        description="Optional deAPI time signature: 2, 3, 4 or 6.",
+    )
+    deapi_vocal_language: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=10,
+        description="Optional deAPI vocal language code.",
     )
 
 
@@ -94,8 +158,51 @@ class GenerateSpeechMixRequest(BaseModel):
     duration_seconds: int = Field(
         DEFAULT_DURATION_SECONDS,
         ge=MIN_DURATION_SECONDS,
-        le=MAX_DURATION_SECONDS,
+        le=DEAPI_MAX_DURATION_SECONDS,
         description="Approximate instrumental duration in seconds",
+    )
+    music_provider: str = Field(
+        default=DEFAULT_MUSIC_PROVIDER,
+        pattern="^(local|deapi)$",
+        description="Music generation provider: local MusicGen or deAPI.",
+    )
+    deapi_model: str | None = Field(
+        default=None,
+        description="Optional deAPI model slug. If omitted, DEAPI_MUSIC_MODEL is used.",
+    )
+    deapi_inference_steps: int = Field(
+        default=DEFAULT_DEAPI_INFERENCE_STEPS,
+        ge=1,
+        le=100,
+        description="deAPI music diffusion steps.",
+    )
+    deapi_guidance_scale: float = Field(
+        default=DEFAULT_DEAPI_GUIDANCE_SCALE,
+        ge=0,
+        le=20,
+        description="deAPI classifier-free guidance scale.",
+    )
+    deapi_seed: int = Field(default=DEFAULT_DEAPI_SEED, description="deAPI seed. Use -1 for random.")
+    deapi_format: str = Field(
+        default=DEFAULT_DEAPI_MUSIC_FORMAT,
+        min_length=2,
+        max_length=8,
+        description="deAPI output format, for example wav, flac or mp3.",
+    )
+    deapi_bpm: int | None = Field(default=None, ge=30, le=300, description="Optional deAPI BPM.")
+    deapi_keyscale: str | None = Field(
+        default=None,
+        description="Optional deAPI musical key, for example C major or F# minor.",
+    )
+    deapi_timesignature: int | None = Field(
+        default=None,
+        description="Optional deAPI time signature: 2, 3, 4 or 6.",
+    )
+    deapi_vocal_language: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=10,
+        description="Optional deAPI vocal language code.",
     )
     speech_engine: str = Field(
         default="piper",
@@ -395,6 +502,59 @@ def build_audio_url(request: Request, file_name: str) -> str:
     return str(request.base_url).rstrip("/") + f"/audio/{file_name}"
 
 
+def validate_music_provider_duration(music_provider: str, duration_seconds: int) -> None:
+    if music_provider == "local" and duration_seconds > MAX_DURATION_SECONDS:
+        raise ValueError(
+            f"Local MusicGen duration must be between {MIN_DURATION_SECONDS} and "
+            f"{MAX_DURATION_SECONDS} seconds. Use music_provider='deapi' for longer tracks."
+        )
+
+    if music_provider == "deapi" and duration_seconds < DEAPI_MIN_DURATION_SECONDS:
+        raise ValueError(
+            f"deAPI music duration must be between {DEAPI_MIN_DURATION_SECONDS} and "
+            f"{DEAPI_MAX_DURATION_SECONDS} seconds."
+        )
+
+
+def validate_deapi_timesignature(timesignature: int | None) -> None:
+    if timesignature is not None and timesignature not in {2, 3, 4, 6}:
+        raise ValueError("deapi_timesignature must be 2, 3, 4 or 6.")
+
+
+def convert_audio_to_wav(source_path: Path, wav_path: Path) -> None:
+    try:
+        from pydub import AudioSegment
+    except ImportError as exc:
+        raise RuntimeError("pydub is required to convert deAPI audio for mixing.") from exc
+
+    audio = AudioSegment.from_file(str(source_path))
+    audio.export(str(wav_path), format="wav")
+
+
+def generate_deapi_music_bundle(
+    data: GenerateRequest | GenerateSpeechMixRequest,
+    *,
+    prompt: str,
+    lyrics: str,
+) -> tuple[str, str]:
+    validate_deapi_timesignature(data.deapi_timesignature)
+    return generate_deapi_music_file(
+        caption=prompt,
+        lyrics=lyrics,
+        duration_seconds=data.duration_seconds,
+        output_dir=OUTPUT_DIR,
+        model=data.deapi_model or DEFAULT_DEAPI_MUSIC_MODEL,
+        inference_steps=data.deapi_inference_steps,
+        guidance_scale=data.deapi_guidance_scale,
+        seed=data.deapi_seed,
+        audio_format=data.deapi_format,
+        bpm=data.deapi_bpm,
+        keyscale=data.deapi_keyscale,
+        timesignature=data.deapi_timesignature,
+        vocal_language=data.deapi_vocal_language,
+    )
+
+
 def resolve_speaker_file(path_value: str | None) -> Path | None:
     if not path_value:
         return None
@@ -633,6 +793,8 @@ def generate_speech_file(
 def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]:
     music_prompt = data.music_prompt.strip()
     lyrics = data.lyrics.strip()
+    validate_music_provider_duration(data.music_provider, data.duration_seconds)
+
     bundle_id = uuid4().hex
     music_file_name = f"{bundle_id}-music.wav"
     vocal_file_name = f"{bundle_id}-vocal.wav"
@@ -645,12 +807,28 @@ def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]
     final_file_path = OUTPUT_DIR / final_file_name
 
     with generation_lock:
-        generate_musicgen_file(
-            music_prompt,
-            data.duration_seconds,
-            music_file_path,
-            vocals=True,
-        )
+        deapi_request_id = None
+        deapi_source_file_name = None
+
+        if data.music_provider == "deapi":
+            deapi_source_file_name, deapi_request_id = generate_deapi_music_bundle(
+                data,
+                prompt=music_prompt,
+                lyrics="[Instrumental]",
+            )
+            deapi_source_file_path = OUTPUT_DIR / deapi_source_file_name
+            if deapi_source_file_path.suffix.lower() == ".wav":
+                shutil.copyfile(deapi_source_file_path, music_file_path)
+            else:
+                convert_audio_to_wav(deapi_source_file_path, music_file_path)
+        else:
+            generate_musicgen_file(
+                music_prompt,
+                data.duration_seconds,
+                music_file_path,
+                vocals=True,
+            )
+
         speech_metadata = generate_speech_file(
             text=lyrics,
             vocal_style=data.vocal_style,
@@ -684,17 +862,38 @@ def generate_mix_bundle(data: GenerateSpeechMixRequest) -> dict[str, str | None]
         "speech_engine": speech_metadata["speech_engine"],
         "speaker_name": speech_metadata["speaker_name"],
         "speaker_wav_path": speech_metadata["speaker_wav_path"],
+        "music_provider": data.music_provider,
+        "deapi_request_id": deapi_request_id,
+        "deapi_source_file": deapi_source_file_name,
     }
 
 
-def generate_music_bundle(prompt: str, duration_seconds: int) -> str:
-    file_name = f"{uuid4().hex}.wav"
-    file_path = OUTPUT_DIR / file_name
+def generate_music_bundle(data: GenerateRequest) -> dict[str, str | None]:
+    prompt = data.prompt.strip()
+    validate_music_provider_duration(data.music_provider, data.duration_seconds)
 
     with generation_lock:
-        generate_musicgen_file(prompt, duration_seconds, file_path)
+        if data.music_provider == "deapi":
+            file_name, deapi_request_id = generate_deapi_music_bundle(
+                data,
+                prompt=prompt,
+                lyrics=data.deapi_lyrics.strip() or "[Instrumental]",
+            )
+            return {
+                "file": file_name,
+                "music_provider": "deapi",
+                "deapi_request_id": deapi_request_id,
+            }
 
-    return file_name
+        file_name = f"{uuid4().hex}.wav"
+        file_path = OUTPUT_DIR / file_name
+        generate_musicgen_file(prompt, data.duration_seconds, file_path)
+
+    return {
+        "file": file_name,
+        "music_provider": "local",
+        "deapi_request_id": None,
+    }
 
 
 @app.on_event("startup")
@@ -708,22 +907,27 @@ async def health_check() -> dict[str, str]:
 
 
 @app.post("/generate")
-async def generate_music(data: GenerateRequest, request: Request) -> dict[str, str]:
+async def generate_music(data: GenerateRequest, request: Request) -> dict[str, str | None]:
     prompt = data.prompt.strip()
 
     if not prompt:
         raise HTTPException(status_code=400, detail="Prompt is required")
 
     try:
-        file_name = await run_in_threadpool(
+        result = await run_in_threadpool(
             generate_music_bundle,
-            prompt,
-            data.duration_seconds,
+            data,
         )
         return {
-            "file": file_name,
-            "audio_url": build_audio_url(request, file_name),
+            "file": result["file"],
+            "audio_url": build_audio_url(request, result["file"]),
+            "music_provider": result["music_provider"],
+            "deapi_request_id": result["deapi_request_id"],
         }
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DeapiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Music generation failed: {exc}"
@@ -757,17 +961,38 @@ async def generate_with_speech(
             "speech_engine": result["speech_engine"],
             "speaker_name": result["speaker_name"],
             "speaker_wav_path": result["speaker_wav_path"],
+            "music_provider": result["music_provider"],
+            "deapi_request_id": result["deapi_request_id"],
+            "deapi_source_file": result["deapi_source_file"],
         }
     except FileNotFoundError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DeapiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except DependencyUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=500, detail=f"Music and speech generation failed: {exc}"
         ) from exc
+
+
+@app.get("/deapi/models")
+async def deapi_models() -> dict:
+    try:
+        return await run_in_threadpool(get_deapi_music_models)
+    except DeapiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/deapi/balance")
+async def deapi_balance() -> dict:
+    try:
+        return await run_in_threadpool(get_deapi_balance)
+    except DeapiError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @app.get("/audio/{file_name}")
@@ -780,6 +1005,9 @@ async def get_audio(file_name: str) -> FileResponse:
     media_types = {
         ".mp3": "audio/mpeg",
         ".wav": "audio/wav",
+        ".flac": "audio/flac",
+        ".ogg": "audio/ogg",
+        ".m4a": "audio/mp4",
     }
     media_type = media_types.get(file_path.suffix.lower(), "application/octet-stream")
     return FileResponse(file_path, media_type=media_type, filename=file_name)
