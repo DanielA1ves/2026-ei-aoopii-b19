@@ -17,6 +17,14 @@ function normalizeApiUrl(baseUrl, path) {
   return `${baseUrl.replace(/\/$/, '')}${path}`
 }
 
+function resolveGeneratedAudioUrl(data) {
+  if (data.file) {
+    return normalizeApiUrl(API_BASE_URL, `/audio/${data.file}`)
+  }
+
+  return data.audio_url || data.audioUrl || ''
+}
+
 function clampDuration(value, minDuration, maxDuration) {
   return Math.min(maxDuration, Math.max(minDuration, value))
 }
@@ -148,6 +156,17 @@ function PlayerPanel({ status, audioUrl, title, copy, outputFormat = 'WAV' }) {
   )
 }
 
+function GenerateButton({ isLoading, idleLabel }) {
+  return (
+    <button className={isLoading ? 'primary-action is-loading' : 'primary-action'} type="submit" disabled={isLoading}>
+      <span className="action-icon" aria-hidden="true">
+        {isLoading ? '' : '>'}
+      </span>
+      {isLoading ? 'A gerar audio' : idleLabel}
+    </button>
+  )
+}
+
 function HomePage({ onSelectMode }) {
   return (
     <main className="app-shell">
@@ -214,8 +233,7 @@ function MusicPage({ onBack }) {
         throw new Error(data.detail || 'Nao foi possivel gerar o audio.')
       }
 
-      const generatedUrl =
-        data.audio_url || data.audioUrl || (data.file ? normalizeApiUrl(API_BASE_URL, `/audio/${data.file}`) : '')
+      const generatedUrl = resolveGeneratedAudioUrl(data)
 
       if (!generatedUrl) {
         throw new Error('A API nao devolveu o endereco do audio.')
@@ -260,10 +278,7 @@ function MusicPage({ onBack }) {
             <DurationControl duration={duration} setDuration={setDuration} provider={musicProvider} />
 
             <div className="actions">
-              <button className="primary-action" type="submit" disabled={status === 'loading'}>
-                <span aria-hidden="true">{status === 'loading' ? '...' : '>'}</span>
-                {status === 'loading' ? 'A gerar audio' : 'Gerar musica'}
-              </button>
+              <GenerateButton isLoading={status === 'loading'} idleLabel="Gerar musica" />
             </div>
           </form>
         </div>
@@ -339,8 +354,7 @@ function LyricsPage({ onBack }) {
         throw new Error(data.detail || 'Nao foi possivel gerar o audio com letra.')
       }
 
-      const generatedUrl =
-        data.audio_url || data.audioUrl || (data.file ? normalizeApiUrl(API_BASE_URL, `/audio/${data.file}`) : '')
+      const generatedUrl = resolveGeneratedAudioUrl(data)
 
       if (!generatedUrl) {
         throw new Error('A API nao devolveu o endereco do audio.')
@@ -398,10 +412,7 @@ function LyricsPage({ onBack }) {
             <DurationControl duration={duration} setDuration={setDuration} provider={musicProvider} />
 
             <div className="actions">
-              <button className="primary-action" type="submit" disabled={status === 'loading'}>
-                <span aria-hidden="true">{status === 'loading' ? '...' : '>'}</span>
-                {status === 'loading' ? 'A gerar audio' : 'Gerar com letra'}
-              </button>
+              <GenerateButton isLoading={status === 'loading'} idleLabel="Gerar com letra" />
             </div>
           </form>
         </div>
