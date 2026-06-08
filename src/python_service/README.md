@@ -306,6 +306,13 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 
 - O `MusicGen` e carregado no arranque.
 - A deAPI e usada apenas quando o pedido tem `music_provider: "deapi"`.
+- Antes de enviar a prompt ao modelo, o backend aplica prompt engineering
+  conservador: traduz termos musicais comuns em portugues e expande apenas
+  pedidos curtos ou claros por categorias como coral/gospel, metal, trap,
+  piano classico, ambiente, jazz, samba, fado, terror cinematografico e rock
+  dos anos 80. Por exemplo, `coro de igreja` passa a incluir descritores como
+  `church choir`, `gospel choir`, `mixed SATB choir`, `cathedral reverb` e
+  `pipe organ accompaniment`.
 - `XTTS` e `Bark` sao carregados apenas quando usados.
 - `Piper` descarrega a voz na primeira utilizacao e depois fica em cache local.
 - A geracao e feita de forma sequencial para evitar conflitos de GPU e picos de memoria.
