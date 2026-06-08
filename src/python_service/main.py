@@ -33,6 +33,7 @@ from musicgen_service import (
     DEFAULT_DURATION_SECONDS,
     MAX_DURATION_SECONDS,
     MIN_DURATION_SECONDS,
+    build_engineered_music_prompt,
     generate_music_file as generate_musicgen_file,
     load_music_model,
 )
@@ -538,8 +539,12 @@ def generate_deapi_music_bundle(
     lyrics: str,
 ) -> tuple[str, str]:
     validate_deapi_timesignature(data.deapi_timesignature)
+    engineered_prompt = build_engineered_music_prompt(
+        prompt,
+        vocals=isinstance(data, GenerateSpeechMixRequest),
+    )
     return generate_deapi_music_file(
-        caption=prompt,
+        caption=engineered_prompt,
         lyrics=lyrics,
         duration_seconds=data.duration_seconds,
         output_dir=OUTPUT_DIR,
