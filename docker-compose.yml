@@ -11,6 +11,8 @@ services:
       DEAPI_MUSIC_FORMAT: ${DEAPI_MUSIC_FORMAT:-wav}
       DEAPI_GUIDANCE_SCALE: ${DEAPI_GUIDANCE_SCALE:-1}
       DEAPI_INFERENCE_STEPS: ${DEAPI_INFERENCE_STEPS:-8}
+      PROMPT_REFINER_ENABLED: ${PROMPT_REFINER_ENABLED:-true}
+      PROMPT_REFINER_MODEL_NAME: ${PROMPT_REFINER_MODEL_NAME:-Qwen/Qwen2.5-0.5B-Instruct}
     volumes:
       - python_outputs:/app/outputs
       - huggingface_cache:/root/.cache/huggingface

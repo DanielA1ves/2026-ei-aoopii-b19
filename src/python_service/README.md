@@ -30,6 +30,7 @@ As vozes `Piper` nao precisam de existir dentro do repositorio. O backend descar
 - GPU NVIDIA com CUDA e opcional, mas ajuda bastante
 - FFmpeg instalado e disponivel no PATH para exportar MP3 com `pydub`
 - chave `DEAPI_API_KEY` se quiserem gerar musica via deAPI.ai
+- cerca de 1 GB adicional em disco para o refinador de prompts Qwen
 - No Windows, o `XTTS` pode precisar de `Microsoft Visual C++ Build Tools` para compilar a dependencia `TTS`
 - `Piper` funciona localmente e e a opcao recomendada para speech claro sem clonagem de voz
 
@@ -59,6 +60,15 @@ $env:DEAPI_MUSIC_MODEL="AceStep_1_5_Turbo"
 $env:DEAPI_MUSIC_FORMAT="wav"
 $env:DEAPI_GUIDANCE_SCALE="1"
 $env:DEAPI_INFERENCE_STEPS="8"
+$env:PROMPT_REFINER_ENABLED="true"
+$env:PROMPT_REFINER_MODEL_NAME="Qwen/Qwen2.5-0.5B-Instruct"
+```
+
+O refinador Qwen esta ativo por defeito. Para desativar o segundo modelo e usar
+apenas o prompt engineering baseado em regras:
+
+```powershell
+$env:PROMPT_REFINER_ENABLED="false"
 ```
 
 Se quiserem a melhor qualidade para voz em portugues, usem mesmo um ambiente com Python `3.10` ou `3.11`.
@@ -304,15 +314,14 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
 
 ## Notas de implementacao
 
+- O refinador `Qwen/Qwen2.5-0.5B-Instruct` e carregado no arranque e transforma
+  o pedido numa descricao musical curta em ingles. Se nao conseguir carregar
+  ou gerar texto, o backend continua automaticamente com a prompt original.
 - O `MusicGen` e carregado no arranque.
 - A deAPI e usada apenas quando o pedido tem `music_provider: "deapi"`.
-- Antes de enviar a prompt ao modelo, o backend aplica prompt engineering
-  conservador: traduz termos musicais comuns em portugues e expande apenas
-  pedidos curtos ou claros por categorias como coral/gospel, metal, trap,
-  piano classico, ambiente, jazz, samba, fado, terror cinematografico e rock
-  dos anos 80. Por exemplo, `coro de igreja` passa a incluir descritores como
-  `church choir`, `gospel choir`, `mixed SATB choir`, `cathedral reverb` e
-  `pipe organ accompaniment`.
+- Antes de enviar a prompt ao modelo, o backend usa Qwen para a converter numa
+  descricao musical precisa em ingles, priorizando os instrumentos e outras
+  caracteristicas explicitamente pedidas pelo utilizador.
 - `XTTS` e `Bark` sao carregados apenas quando usados.
 - `Piper` descarrega a voz na primeira utilizacao e depois fica em cache local.
 - A geracao e feita de forma sequencial para evitar conflitos de GPU e picos de memoria.
