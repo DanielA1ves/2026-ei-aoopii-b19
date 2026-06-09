@@ -35,6 +35,7 @@ from musicgen_service import (
     MIN_DURATION_SECONDS,
     generate_music_file as generate_musicgen_file,
     load_music_model,
+    load_prompt_refiner_model,
 )
 
 
@@ -898,6 +899,7 @@ def generate_music_bundle(data: GenerateRequest) -> dict[str, str | None]:
 
 @app.on_event("startup")
 def load_models_on_startup() -> None:
+    load_prompt_refiner_model()
     load_music_model()
 
 
