@@ -531,20 +531,55 @@ def translate_portuguese_music_prompt(prompt: str) -> str:
     return " ".join(dict.fromkeys(translated_words))
 
 
-def build_musicgen_prompt(prompt: str, *, vocals: bool = False) -> str:
+def prompt_requests_vocal_music(prompt: str) -> bool:
+    normalized_prompt = normalize_prompt_text(prompt)
+    words = set(re.findall(r"[\w-]+", normalized_prompt))
+    return any(term in normalized_prompt for term in VOCAL_MUSIC_TERMS) or bool(
+        words & VOCAL_MUSIC_TERMS
+    )
+
+
+def ordered_unique(parts: list[str]) -> list[str]:
+    seen = set()
+    unique_parts = []
+    for part in parts:
+        clean_part = " ".join(part.split()).strip()
+        key = clean_part.casefold()
+        if clean_part and key not in seen:
+            seen.add(key)
+            unique_parts.append(clean_part)
+    return unique_parts
+
+
+def expand_music_prompt(translated_prompt: str, original_prompt: str) -> str:
+    normalized_original = normalize_prompt_text(original_prompt)
+    normalized_translated = normalize_prompt_text(translated_prompt)
+    prompt_parts = [translated_prompt]
+
+    for triggers, expansion_parts in PROMPT_EXPANSIONS:
+        if any(
+            normalize_prompt_text(trigger) in normalized_original
+            or normalize_prompt_text(trigger) in normalized_translated
+            for trigger in triggers
+        ):
+            prompt_parts.extend(expansion_parts)
+
+    return ", ".join(ordered_unique(prompt_parts))
+
+
+def build_rule_based_music_prompt(prompt: str, *, vocals: bool = False) -> str:
     clean_prompt = " ".join(prompt.split())
     if not clean_prompt:
         return clean_prompt
 
-    refined_prompt = refine_music_prompt(clean_prompt, vocals=vocals)
-    final_prompt = (
+    is_portuguese_prompt = looks_like_portuguese_prompt(clean_prompt)
+    translated_prompt = (
         translate_portuguese_music_prompt(clean_prompt)
-        if looks_like_portuguese_prompt(clean_prompt)
-        and refined_prompt == clean_prompt
-        else refined_prompt
+        if is_portuguese_prompt
+        else clean_prompt
     )
 
-    if not final_prompt:
+    if not translated_prompt:
         return clean_prompt
 
     engineered_prompt = expand_music_prompt(translated_prompt, clean_prompt)
@@ -558,7 +593,39 @@ def build_musicgen_prompt(prompt: str, *, vocals: bool = False) -> str:
     requests_vocal_music = prompt_requests_vocal_music(
         f"{clean_prompt} {engineered_prompt}"
     )
-    return f"{final_prompt}, {vocal_context}"
+
+    if vocals:
+        vocal_context = (
+            "background arrangement, clear space for lead vocals"
+            if requests_vocal_music
+            else "instrumental backing track, space for vocals"
+        )
+    else:
+        vocal_context = (
+            "prominent human vocals and harmonies"
+            if requests_vocal_music
+            else ""
+        )
+
+    return ", ".join(ordered_unique([engineered_prompt, vocal_context]))
+
+
+def build_engineered_music_prompt(prompt: str, *, vocals: bool = False) -> str:
+    clean_prompt = " ".join(prompt.split())
+    if not clean_prompt:
+        return clean_prompt
+
+    fallback_prompt = build_rule_based_music_prompt(clean_prompt, vocals=vocals)
+    refined_prompt = refine_music_prompt(clean_prompt, vocals=vocals)
+
+    if not refined_prompt or refined_prompt == clean_prompt:
+        return fallback_prompt
+
+    return expand_music_prompt(refined_prompt, fallback_prompt)
+
+
+def build_musicgen_prompt(prompt: str, *, vocals: bool = False) -> str:
+    return build_engineered_music_prompt(prompt, vocals=vocals)
 
 
 def duration_to_musicgen_tokens(duration_seconds: int) -> int:
