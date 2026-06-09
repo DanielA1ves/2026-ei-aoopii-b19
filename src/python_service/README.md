@@ -56,7 +56,7 @@ A chave pode ser criada em `https://app.deapi.ai/settings/api-keys`.
 Variaveis opcionais:
 
 ```powershell
-$env:DEAPI_MUSIC_MODEL="ACE-Step-v1.5-turbo"
+$env:DEAPI_MUSIC_MODEL="AceStep_1_5_Turbo"
 $env:DEAPI_MUSIC_FORMAT="wav"
 $env:DEAPI_GUIDANCE_SCALE="1"
 $env:DEAPI_INFERENCE_STEPS="8"

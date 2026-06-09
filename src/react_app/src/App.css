@@ -258,7 +258,7 @@ input[type='range'] {
   cursor: pointer;
 }
 
-.primary-action span {
+.primary-action .action-icon {
   display: grid;
   width: 24px;
   height: 24px;
@@ -270,9 +270,34 @@ input[type='range'] {
   font-weight: 800;
 }
 
+.primary-action.is-loading .action-icon {
+  position: relative;
+  background: transparent;
+}
+
+.primary-action.is-loading .action-icon::before,
+.primary-action.is-loading .action-icon::after {
+  content: '';
+  position: absolute;
+  border-radius: 999px;
+}
+
+.primary-action.is-loading .action-icon::before {
+  inset: 0;
+  border: 3px solid rgba(34, 197, 94, 0.28);
+  border-top-color: var(--accent);
+  animation: spin 760ms linear infinite;
+}
+
+.primary-action.is-loading .action-icon::after {
+  inset: 8px;
+  background: var(--accent);
+  animation: loading-dot 760ms ease-in-out infinite alternate;
+}
+
 .primary-action:disabled {
   cursor: wait;
-  opacity: 0.74;
+  opacity: 0.86;
 }
 
 .primary-action:not(:disabled):hover {
@@ -319,6 +344,24 @@ input[type='range'] {
 
   to {
     transform: scaleY(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes loading-dot {
+  from {
+    transform: scale(0.65);
+    opacity: 0.62;
+  }
+
+  to {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 

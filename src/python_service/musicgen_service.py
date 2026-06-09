@@ -46,6 +46,26 @@ logger = logging.getLogger(__name__)
 PORTUGUESE_PHRASE_REPLACEMENTS = [
     ("sem voz", "no vocals"),
     ("com voz", "with vocals"),
+    ("coro de igreja", "church choir"),
+    ("coral de igreja", "church choir"),
+    ("coro gospel", "gospel choir"),
+    ("coral gospel", "gospel choir"),
+    ("musica gospel", "gospel music"),
+    ("musica de terror", "horror music"),
+    ("terror cinematografico", "cinematic horror"),
+    ("piano classico", "classical piano"),
+    ("jazz suave", "smooth jazz"),
+    ("jazz com saxofone", "saxophone jazz"),
+    ("trap escuro", "dark trap"),
+    ("batida trap", "trap beat"),
+    ("samba alegre", "upbeat samba"),
+    ("percussao brasileira", "Brazilian percussion"),
+    ("fado portugues", "Portuguese fado"),
+    ("guitarra portuguesa", "Portuguese guitar"),
+    ("rock dos anos 80", "80s rock"),
+    ("rock anos 80", "80s rock"),
+    ("hip hop calmo", "calm hip hop"),
+    ("lo fi", "lo-fi"),
     ("musica ambiente", "ambient music"),
     ("baixo forte", "powerful bass"),
     ("bateria rapida", "fast drums"),
@@ -70,6 +90,11 @@ PORTUGUESE_PROMPT_TERMS = {
     "piano": "piano",
     "guitarra": "guitar",
     "violino": "violin",
+    "saxofone": "saxophone",
+    "cordas": "strings",
+    "orquestra": "orchestra",
+    "orquestral": "orchestral",
+    "percussao": "percussion",
     "distorcido": "distorted",
     "distorcida": "distorted",
     "distorcidos": "distorted",
@@ -82,6 +107,7 @@ PORTUGUESE_PROMPT_TERMS = {
     "marcado": "driving",
     "marcada": "driving",
     "suave": "smooth",
+    "suaves": "smooth",
     "calmo": "calm",
     "calma": "calm",
     "triste": "sad",
@@ -96,7 +122,13 @@ PORTUGUESE_PROMPT_TERMS = {
     "escuras": "dark",
     "cinematografico": "cinematic",
     "cinematografica": "cinematic",
+    "tenso": "tense",
+    "tensa": "tense",
+    "tensos": "tense",
+    "tensas": "tense",
     "ambiente": "ambient",
+    "terror": "horror",
+    "suspense": "suspense",
     "eletronico": "electronic",
     "eletronica": "electronic",
     "sintetizador": "synthesizer",
@@ -106,10 +138,29 @@ PORTUGUESE_PROMPT_TERMS = {
     "nostalgico": "nostalgic",
     "nostalgica": "nostalgic",
     "energia": "energetic",
+    "trap": "trap",
+    "samba": "samba",
+    "fado": "fado",
+    "jazz": "jazz",
+    "rock": "rock",
+    "metal": "metal",
+    "classico": "classical",
+    "classica": "classical",
+    "noite": "night",
     "concerto": "concert",
     "vivo": "live",
     "instrumental": "instrumental",
     "voz": "vocals",
+    "vozes": "vocals",
+    "coro": "choir",
+    "coral": "choir",
+    "igreja": "church",
+    "gospel": "gospel",
+    "orgao": "organ",
+    "religioso": "religious",
+    "religiosa": "religious",
+    "sagrado": "sacred",
+    "sagrada": "sacred",
 }
 
 PORTUGUESE_CONNECTORS = {
@@ -121,9 +172,165 @@ PORTUGUESE_CONNECTORS = {
     "dos",
     "das",
     "para",
+    "a",
+    "o",
+    "os",
+    "as",
     "um",
     "uma",
 }
+
+VOCAL_MUSIC_TERMS = {
+    "choir",
+    "choral",
+    "chorus",
+    "vocal",
+    "vocals",
+    "voice",
+    "voices",
+    "singer",
+    "singers",
+    "singing",
+    "fado",
+    "coro",
+    "coral",
+    "voz",
+    "vozes",
+}
+
+PROMPT_EXPANSIONS = [
+    (
+        {"church choir", "gospel choir", "choir church", "coro igreja", "coral igreja"},
+        [
+            "church choir",
+            "gospel choir",
+            "mixed SATB choir",
+            "many human voices singing in close harmony",
+            "sacred choral music",
+            "cathedral reverb",
+            "pipe organ accompaniment",
+            "reverent and solemn mood",
+            "slow hymn-like progression",
+        ],
+    ),
+    (
+        {"gospel music", "gospel"},
+        [
+            "gospel music",
+            "soulful choir vocals",
+            "church harmonies",
+            "warm organ",
+            "hand claps",
+            "uplifting spiritual mood",
+        ],
+    ),
+    (
+        {"organ", "pipe organ", "orgao"},
+        [
+            "pipe organ",
+            "large church acoustic",
+            "cathedral reverb",
+            "sustained chords",
+        ],
+    ),
+    (
+        {
+            "heavy metal",
+            "metal heavy",
+            "guitar metal",
+            "guitarra metal",
+            "electric guitar heavy",
+            "heavy electric guitar",
+        },
+        [
+            "heavy metal",
+            "distorted electric guitar riffs",
+            "powerful rhythm guitars",
+            "fast acoustic drums",
+            "aggressive rock tone",
+        ],
+    ),
+    (
+        {"dark trap", "trap dark", "trap beat", "batida trap"},
+        [
+            "dark trap beat",
+            "deep 808 bass",
+            "crisp hi-hats",
+            "sparse minor-key melody",
+            "modern hip hop production",
+        ],
+    ),
+    (
+        {"classical piano", "sad piano", "piano sad", "piano classical"},
+        [
+            "solo piano",
+            "expressive classical piano",
+            "slow tempo",
+            "melancholic minor-key harmony",
+            "natural room reverb",
+        ],
+    ),
+    (
+        {"ambient music", "ambient calm", "calm ambient"},
+        [
+            "ambient soundscape",
+            "soft evolving synthesizer pads",
+            "slow atmospheric texture",
+            "wide spacious reverb",
+            "minimal percussion",
+        ],
+    ),
+    (
+        {"smooth jazz", "saxophone jazz", "jazz saxophone"},
+        [
+            "smooth jazz",
+            "tenor saxophone lead",
+            "walking bass",
+            "brushed drums",
+            "warm late-night lounge sound",
+        ],
+    ),
+    (
+        {"upbeat samba", "samba", "Brazilian percussion"},
+        [
+            "Brazilian samba rhythm",
+            "pandeiro and surdo percussion",
+            "cavaquinho groove",
+            "upbeat festive feel",
+            "syncopated acoustic percussion",
+        ],
+    ),
+    (
+        {"Portuguese fado", "fado"},
+        [
+            "Portuguese fado",
+            "Portuguese guitar accompaniment",
+            "mournful vocal melody",
+            "intimate traditional performance",
+            "melancholic saudade mood",
+        ],
+    ),
+    (
+        {"horror music", "cinematic horror", "horror cinematic"},
+        [
+            "cinematic horror score",
+            "tense string section",
+            "dissonant orchestral drones",
+            "dark suspenseful atmosphere",
+            "slow unsettling build",
+        ],
+    ),
+    (
+        {"80s rock", "rock 80s"},
+        [
+            "80s rock",
+            "electric guitar power chords",
+            "live drum kit",
+            "anthemic chorus energy",
+            "bright vintage rock production",
+        ],
+    ),
+]
 
 
 def normalize_prompt_text(prompt: str) -> str:
@@ -340,10 +547,16 @@ def build_musicgen_prompt(prompt: str, *, vocals: bool = False) -> str:
     if not final_prompt:
         return clean_prompt
 
-    vocal_context = (
-        "instrumental backing track, space for vocals"
-        if vocals
-        else "instrumental music, no vocals"
+    engineered_prompt = expand_music_prompt(translated_prompt, clean_prompt)
+    was_expanded = engineered_prompt != translated_prompt
+
+    if not is_portuguese_prompt and not was_expanded:
+        if vocals:
+            return f"{clean_prompt}, instrumental backing track, space for vocals"
+        return clean_prompt
+
+    requests_vocal_music = prompt_requests_vocal_music(
+        f"{clean_prompt} {engineered_prompt}"
     )
     return f"{final_prompt}, {vocal_context}"
 
@@ -363,7 +576,11 @@ def generate_music_file(
 
     musicgen_prompt = build_musicgen_prompt(prompt, vocals=vocals)
     max_new_tokens = duration_to_musicgen_tokens(duration_seconds)
-    inputs = music_processor(text=[musicgen_prompt], padding=True, return_tensors="pt").to(device)
+    inputs = music_processor(
+        text=[musicgen_prompt],
+        padding=True,
+        return_tensors="pt",
+    ).to(device)
 
     with torch.no_grad():
         audio_values = music_model.generate(
