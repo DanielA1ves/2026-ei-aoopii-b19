@@ -56,10 +56,10 @@ A chave pode ser criada em `https://app.deapi.ai/settings/api-keys`.
 Variaveis opcionais:
 
 ```powershell
-$env:DEAPI_MUSIC_MODEL="AceStep_1_5_Turbo"
+$env:DEAPI_MUSIC_MODEL="AceStep_1_5_Base"
 $env:DEAPI_MUSIC_FORMAT="wav"
-$env:DEAPI_GUIDANCE_SCALE="1"
-$env:DEAPI_INFERENCE_STEPS="8"
+$env:DEAPI_GUIDANCE_SCALE="7"
+$env:DEAPI_INFERENCE_STEPS="40"
 $env:PROMPT_REFINER_ENABLED="true"
 $env:PROMPT_REFINER_MODEL_NAME="Qwen/Qwen2.5-0.5B-Instruct"
 ```
@@ -120,7 +120,8 @@ Pedido:
 }
 ```
 
-`duration_seconds` e opcional. No modo local aceita ate 20 segundos. No modo `deapi` aceita duracoes maiores, dentro dos limites do modelo da deAPI.
+`duration_seconds` e opcional. No modo local aceita ate 20 segundos. No modo
+`deapi`, o modelo Base aceita entre 30 e 300 segundos.
 
 Pedido via deAPI:
 
