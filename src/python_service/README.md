@@ -319,10 +319,13 @@ Devolve qualquer ficheiro `.wav` gerado pelo servico.
   o pedido numa descricao musical curta em ingles. Se nao conseguir carregar
   ou gerar texto, o backend continua automaticamente com a prompt original.
 - O `MusicGen` e carregado no arranque.
-- A deAPI e usada apenas quando o pedido tem `music_provider: "deapi"`.
-- Antes de enviar a prompt ao modelo, o backend usa Qwen para a converter numa
+- No modo local, antes de enviar a prompt ao MusicGen, o backend usa Qwen para
+  a converter numa
   descricao musical precisa em ingles, priorizando os instrumentos e outras
   caracteristicas explicitamente pedidas pelo utilizador.
+- No modo `deapi`, a prompt original e enviada diretamente para a API, sem
+  passar pelo Qwen. O backend apenas normaliza o espaco e respeita o limite de
+  300 caracteres da deAPI.
 - `XTTS` e `Bark` sao carregados apenas quando usados.
 - `Piper` descarrega a voz na primeira utilizacao e depois fica em cache local.
 - A geracao e feita de forma sequencial para evitar conflitos de GPU e picos de memoria.

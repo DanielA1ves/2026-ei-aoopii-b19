@@ -18,6 +18,7 @@ DEFAULT_DEAPI_GUIDANCE_SCALE = float(os.getenv("DEAPI_GUIDANCE_SCALE", "7"))
 DEFAULT_DEAPI_SEED = int(os.getenv("DEAPI_SEED", "-1"))
 DEAPI_POLL_INTERVAL_SECONDS = float(os.getenv("DEAPI_POLL_INTERVAL_SECONDS", "3"))
 DEAPI_TIMEOUT_SECONDS = int(os.getenv("DEAPI_TIMEOUT_SECONDS", "300"))
+DEAPI_MAX_CAPTION_CHARACTERS = 300
 
 CONTENT_TYPE_EXTENSIONS = {
     "audio/mpeg": ".mp3",
@@ -32,6 +33,20 @@ CONTENT_TYPE_EXTENSIONS = {
 
 class DeapiError(RuntimeError):
     """Raised when deAPI cannot complete a music generation request."""
+
+
+def limit_caption(caption: str) -> str:
+    clean_caption = " ".join(caption.split())
+    if len(clean_caption) <= DEAPI_MAX_CAPTION_CHARACTERS:
+        return clean_caption
+
+    shortened = clean_caption[:DEAPI_MAX_CAPTION_CHARACTERS]
+    for separator in (". ", ", ", "; "):
+        boundary = shortened.rfind(separator)
+        if boundary >= DEAPI_MAX_CAPTION_CHARACTERS // 2:
+            return shortened[: boundary + 1].rstrip()
+
+    return shortened.rsplit(" ", maxsplit=1)[0].rstrip(" ,;:")
 
 
 def get_api_key() -> str:
@@ -90,6 +105,7 @@ def submit_music_job(
     timesignature: int | None = None,
     vocal_language: str | None = None,
 ) -> str:
+    caption = limit_caption(caption)
     fields: dict[str, str] = {
         "caption": caption,
         "model": model or DEFAULT_DEAPI_MUSIC_MODEL,
