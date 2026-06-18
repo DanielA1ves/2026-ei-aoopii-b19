@@ -62,6 +62,14 @@ Para correr essa componente, consultar:
 
 - [src/python_service/README.md](src/python_service/README.md)
 
+## Testes de geracao de audio
+
+| Teste | Prompt usada | Motor | Audio |
+|---|---|---|---|
+| Metal | `2000's metal with guitar and drums` | Local / MusicGen | [Ouvir audio](docs/audio-tests/metal.mp3) |
+| Coro de igreja | `coro de igreja com instrumento orgao` | Local / MusicGen | [Ouvir audio](docs/audio-tests/coro.mp3) |
+| Jazz com saxofone | `slow jazz with saxophone` | deAPI.ai | [Ouvir audio](docs/audio-tests/jazz.mp3) |
+
 ## deAPI.ai
 
 Para gerar musica via deAPI.ai:
